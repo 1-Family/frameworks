@@ -27,6 +27,7 @@ import android.util.Printer;
 
 import java.text.Collator;
 import java.util.Comparator;
+import android.content.res.Resources;
 
 /**
  * Base class containing information common to all package items held by
@@ -48,6 +49,10 @@ public class PackageItemInfo {
      */
     public String packageName;
     
+    /**
+     * @hide 
+     */
+    public PackageManager.PackageType packageSecurityType = PackageManager.PackageType.PRIVATE;
     /**
      * A string resource identifier (in the package's resources) of this
      * component's label.  From the "label" attribute or, if not set, 0.
@@ -110,6 +115,7 @@ public class PackageItemInfo {
         logo = orig.logo;
         metaData = orig.metaData;
         showUserIcon = orig.showUserIcon;
+        Resources.addIcon(packageName,icon);
     }
 
     /**
@@ -305,6 +311,7 @@ public class PackageItemInfo {
         metaData = source.readBundle();
         banner = source.readInt();
         showUserIcon = source.readInt();
+		Resources.addIcon(packageName,icon);
     }
 
     /**

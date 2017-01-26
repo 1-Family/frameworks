@@ -76,6 +76,9 @@ import com.android.server.Watchdog;
 import com.android.server.pm.Settings.DatabaseVersion;
 import com.android.server.storage.DeviceStorageMonitorInternal;
 
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
 import org.xmlpull.v1.XmlSerializer;
 
 import android.app.ActivityManager;
@@ -213,8 +216,11 @@ import dalvik.system.DexFile;
 import dalvik.system.StaleDexCacheError;
 import dalvik.system.VMRuntime;
 
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
 import libcore.io.IoUtils;
 import libcore.util.EmptyArray;
+import android.content.pm.PackageManager.PackageType;
 
 /**
  * Keep track of all those .apks everywhere.
@@ -315,6 +321,8 @@ public class PackageManagerService extends IPackageManager.Stub {
     private static final String IDMAP_PREFIX = "/data/resource-cache/";
     private static final String IDMAP_SUFFIX = "@idmap";
 
+	private static String[] ACTIONS_TO_FILTER = new String[]{Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE};
+	
     final PackageHandler mHandler;
 
     /**
@@ -335,9 +343,13 @@ public class PackageManagerService extends IPackageManager.Stub {
 
     // This is where all application persistent data goes.
     final File mAppDataDir;
+    final File mBusinessAppDataDir;
+    final File mPrivateAppDataDir;
 
     // This is where all application persistent data goes for secondary users.
     final File mUserAppDataDir;
+    final File mUserBusinessAppDataDir;
+    final File mUserPrivateAppDataDir;    
 
     /** The location for ASEC container files on internal storage. */
     final String mAsecInternalPath;
@@ -540,6 +552,8 @@ public class PackageManagerService extends IPackageManager.Stub {
     // package uri's from external media onto secure containers
     // or internal storage.
     private IMediaContainerService mContainerService = null;
+    
+    private static HashMap<String, PackageManager.PackageType> mPackagesTypes = new HashMap<String, PackageManager.PackageType>();
 
     static final int SEND_PENDING_BROADCAST = 1;
     static final int MCS_BOUND = 3;
@@ -1331,10 +1345,14 @@ public class PackageManagerService extends IPackageManager.Stub {
 
             File dataDir = Environment.getDataDirectory();
             mAppDataDir = new File(dataDir, "data");
+            mPrivateAppDataDir = Environment.getPrivateDataDirectory(); 
+            mBusinessAppDataDir = Environment.getBusinessDataDirectory();
             mAppInstallDir = new File(dataDir, "app");
             mAppLib32InstallDir = new File(dataDir, "app-lib");
             mAsecInternalPath = new File(dataDir, "app-asec").getPath();
             mUserAppDataDir = new File(dataDir, "user");
+            mUserPrivateAppDataDir = new File(dataDir, "private_user");            
+            mUserBusinessAppDataDir = new File(dataDir, "business_user");            
             mDrmAppPrivateInstallDir = new File(dataDir, "app-private");
 
             sUserManager = new UserManagerService(context, this,
@@ -1519,6 +1537,8 @@ public class PackageManagerService extends IPackageManager.Stub {
             scanDirLI(vendorOverlayDir, PackageParser.PARSE_IS_SYSTEM
                     | PackageParser.PARSE_IS_SYSTEM_DIR, scanFlags | SCAN_TRUSTED_OVERLAY, 0);
 
+            getBusinessPrivatePackagesFromXML();
+            PackageManager.setPackagesTypes(mPackagesTypes);
             // Find base frameworks (resource packages without code).
             scanDirLI(frameworkDir, PackageParser.PARSE_IS_SYSTEM
                     | PackageParser.PARSE_IS_SYSTEM_DIR
@@ -3318,9 +3338,47 @@ public class PackageManagerService extends IPackageManager.Stub {
         return null;
     }
 
+    //Check if this is an action we would like to filter (private/business)
+	private static boolean isFilterAction(String action) {
+		int i=0;
+		boolean isFilter = false;
+		while(i<ACTIONS_TO_FILTER.length && !isFilter) {
+	 		isFilter = ACTIONS_TO_FILTER[i].equals(action);
+	 		i++;
+	 	}
+		return isFilter;
+	}
+
+	private PackageType getOriginPackageType(Intent intent) {	
+		PackageType packageType = PackageType.PRIVATE;
+		String originPackageName = "";
+		int callingUid = Binder.getCallingUid();
+    	//Log.d(TAG, String.format("calling uid =<%d>", callingUid));
+		if (callingUid != SYSTEM_UID) {
+			//Get the original PackageType according to the calling uid
+			// Note that we first get from uid -> package name (doe not matter which one if the uid has more than 1) -> package type
+	    	String[] callingUidPackages = getPackagesForUid(callingUid);
+	    	originPackageName = (callingUidPackages == null || callingUidPackages.length == 0) ? "" : callingUidPackages[0];
+			//Log.d(TAG, String.format("calculated origin package=<%s>", originPackageName));
+	    	packageType = PackageManager.getPackageType(originPackageName);	    	
+		} else {
+			//If the calling uid is system, get the originPackageName from the intent
+			//Only ResolverActivity  and ChooserActivity should use intent.setOriginPackageName
+			//If the originPackageName is null (while the user is system, set the type to BUSINESS_PRIVATE
+			originPackageName = intent == null ? null : intent.getOriginPackage(); 
+			//Log.d(TAG, String.format("calculated origin package=<%s>", originPackageName));
+			if (originPackageName == null) {
+				packageType = PackageType.BUSINESS_PRIVATE;
+			} else {
+		    	packageType = PackageManager.getPackageType(originPackageName);	
+			}
+		}
+    	return packageType;    	
+	}
     @Override
     public List<ResolveInfo> queryIntentActivities(Intent intent,
             String resolvedType, int flags, int userId) {
+
         if (!sUserManager.exists(userId)) return Collections.emptyList();
         enforceCrossUserPermission(Binder.getCallingUid(), userId, false, false, "query intent activities");
         ComponentName comp = intent.getComponent();
@@ -3342,35 +3400,59 @@ public class PackageManagerService extends IPackageManager.Stub {
             return list;
         }
 
+        PackageType originPackageType = getOriginPackageType(intent);
+        boolean isAttemptFilterPackage = isFilterAction(intent.getAction()) && originPackageType != PackageType.BUSINESS_PRIVATE;
+        
         // reader
         synchronized (mPackages) {
             final String pkgName = intent.getPackage();
             if (pkgName == null) {
+            	List<ResolveInfo> result = null;
                 List<CrossProfileIntentFilter> matchingFilters =
                         getMatchingCrossProfileIntentFilters(intent, resolvedType, userId);
                 // Check for results that need to skip the current profile.
                 ResolveInfo resolveInfo  = querySkipCurrentProfileIntents(matchingFilters, intent,
                         resolvedType, flags, userId);
                 if (resolveInfo != null) {
-                    List<ResolveInfo> result = new ArrayList<ResolveInfo>(1);
+                    result = new ArrayList<ResolveInfo>(1);
                     result.add(resolveInfo);
-                    return result;
-                }
-                // Check for cross profile results.
-                resolveInfo = queryCrossProfileIntents(
-                        matchingFilters, intent, resolvedType, flags, userId);
+                } else {
+	                // Check for cross profile results.
+	                resolveInfo = queryCrossProfileIntents(
+	                        matchingFilters, intent, resolvedType, flags, userId);
 
-                // Check for results in the current profile.
-                List<ResolveInfo> result = mActivities.queryIntent(
-                        intent, resolvedType, flags, userId);
-                if (resolveInfo != null) {
-                    result.add(resolveInfo);
-                    Collections.sort(result, mResolvePrioritySorter);
-                }
+	                // Check for results in the current profile.
+	                result = mActivities.queryIntent(
+	                        intent, resolvedType, flags, userId);
+	                if (resolveInfo != null) {
+	                    result.add(resolveInfo);
+	                    Collections.sort(result, mResolvePrioritySorter);
+	                }
+				}
+		
+				if (isAttemptFilterPackage) {
+					//Go over each Package and check its type:
+					for (Iterator iterator = result.iterator(); iterator.hasNext();) {
+						resolveInfo = (ResolveInfo) iterator.next();
+						//Log.d(TAG, String.format("Checking package=<%s>",resolveInfo.activityInfo.applicationInfo.packageName));
+						PackageType currPackageType = resolveInfo.activityInfo.applicationInfo.packageSecurityType;
+						if (currPackageType != null && currPackageType != originPackageType && currPackageType != PackageType.BUSINESS_PRIVATE) {
+							//Log.d(TAG, String.format("Skipping <%s>",resolveInfo.activityInfo.applicationInfo.packageName));
+							iterator.remove();
+						}
+					}
+				}		
                 return result;
             }
             final PackageParser.Package pkg = mPackages.get(pkgName);
-            if (pkg != null) {
+            boolean isFilter = false;
+            if (isAttemptFilterPackage) {
+            	PackageType targetPackageType = PackageManager.getPackageType(intent.getPackage());
+            	if (targetPackageType != originPackageType && targetPackageType != PackageType.BUSINESS_PRIVATE) {
+            		isFilter = true;
+            	}          
+            }
+            if (pkg != null && !isFilter) {
                 return mActivities.queryIntentForPackage(intent, resolvedType, flags,
                         pkg.activities, userId);
             }
@@ -5026,23 +5108,36 @@ public class PackageManagerService extends IPackageManager.Stub {
          * previously would have. The PackageManagerTests will need to be
          * revised when this is changed back..
          */
+    	PackageType packageType = PackageManager.getPackageType(packageName);
+    	File appDataDir = null;
+    	File userAppDataDir = null;
+    	if (packageType == PackageType.BUSINESS || packageType == PackageType.BUSINESS_PRIVATE) {
+        	appDataDir = mBusinessAppDataDir;
+        	userAppDataDir = mUserBusinessAppDataDir;
+    	} else {
+        	appDataDir = mPrivateAppDataDir;
+        	userAppDataDir = mUserPrivateAppDataDir;    		
+    	}
+    	
         if (userId == 0) {
-            return new File(mAppDataDir, packageName);
+            return new File(appDataDir, packageName);
         } else {
-            return new File(mUserAppDataDir.getAbsolutePath() + File.separator + userId
-                + File.separator + packageName);
+            return new File(String.format("%s%s%d%s%s", userAppDataDir.getAbsolutePath(), 
+            									  File.separator, userId, 
+            									  File.separator, packageName));
         }
     }
 
     private int createDataDirsLI(String packageName, int uid, String seinfo) {
         int[] users = sUserManager.getUserIds();
-        int res = mInstaller.install(packageName, uid, uid, seinfo);
+        PackageType packageType = PackageManager.getPackageType(packageName);
+        int res = mInstaller.install(packageName, packageType, uid, uid, seinfo);
         if (res < 0) {
             return res;
         }
         for (int user : users) {
             if (user != 0) {
-                res = mInstaller.createUserData(packageName,
+                res = mInstaller.createUserData(packageName, packageType,
                         UserHandle.getUid(user, uid), user, seinfo);
                 if (res < 0) {
                     return res;
@@ -5055,8 +5150,9 @@ public class PackageManagerService extends IPackageManager.Stub {
     private int removeDataDirsLI(String packageName) {
         int[] users = sUserManager.getUserIds();
         int res = 0;
+        PackageType packageType = PackageManager.getPackageType(packageName);
         for (int user : users) {
-            int resInner = mInstaller.remove(packageName, user);
+            int resInner = mInstaller.remove(packageName, packageType, user);
             if (resInner < 0) {
                 res = resInner;
             }
@@ -5069,7 +5165,7 @@ public class PackageManagerService extends IPackageManager.Stub {
         int[] users = sUserManager.getUserIds();
         int res = 0;
         for (int user : users) {
-            int resInner = mInstaller.deleteCodeCacheFiles(packageName, user);
+            int resInner = mInstaller.deleteCodeCacheFiles(packageName, PackageManager.getPackageType(packageName), user);
             if (resInner < 0) {
                 res = resInner;
             }
@@ -5284,6 +5380,7 @@ public class PackageManagerService extends IPackageManager.Stub {
                     + " already installed.  Skipping duplicate.");
         }
 
+        pkg.applicationInfo.packageSecurityType = PackageManager.getPackageType(pkg.packageName);        
         // Initialize package source and resource directories
         File destCodeFile = new File(pkg.applicationInfo.getCodePath());
         File destResourceFile = new File(pkg.applicationInfo.getResourcePath());
@@ -5301,7 +5398,7 @@ public class PackageManagerService extends IPackageManager.Stub {
         // writer
         synchronized (mPackages) {
             if (pkg.mSharedUserId != null) {
-                suid = mSettings.getSharedUserLPw(pkg.mSharedUserId, 0, true);
+                suid = mSettings.getSharedUserLPw(pkg.mSharedUserId, 0, true, pkg.applicationInfo.packageSecurityType.ordinal());
                 if (suid == null) {
                     throw new PackageManagerException(INSTALL_FAILED_INSUFFICIENT_STORAGE,
                             "Creating application package " + pkg.packageName
@@ -5375,7 +5472,7 @@ public class PackageManagerService extends IPackageManager.Stub {
                     destResourceFile, pkg.applicationInfo.nativeLibraryRootDir,
                     pkg.applicationInfo.primaryCpuAbi,
                     pkg.applicationInfo.secondaryCpuAbi,
-                    pkg.applicationInfo.flags, user, false);
+                    pkg.applicationInfo.flags, user, false, pkg.applicationInfo.packageSecurityType.ordinal());
             if (pkgSetting == null) {
                 throw new PackageManagerException(INSTALL_FAILED_INSUFFICIENT_STORAGE,
                         "Creating application package " + pkg.packageName + " failed");
@@ -5550,7 +5647,7 @@ public class PackageManagerService extends IPackageManager.Stub {
                         // This is probably because the system was stopped while
                         // installd was in the middle of messing with its libs
                         // directory.  Ask installd to fix that.
-                        int ret = mInstaller.fixUid(pkgName, pkg.applicationInfo.uid,
+                        int ret = mInstaller.fixUid(pkgName, PackageManager.getPackageType(pkgName), pkg.applicationInfo.uid,
                                 pkg.applicationInfo.uid);
                         if (ret >= 0) {
                             recovered = true;
@@ -5622,7 +5719,7 @@ public class PackageManagerService extends IPackageManager.Stub {
                 pkg.applicationInfo.dataDir = dataPath.getPath();
                 if (mShouldRestoreconData) {
                     Slog.i(TAG, "SELinux relabeling of " + pkg.packageName + " issued.");
-                    mInstaller.restoreconData(pkg.packageName, pkg.applicationInfo.seinfo,
+                    mInstaller.restoreconData(pkg.packageName, PackageManager.getPackageType(pkg.packageName), pkg.applicationInfo.seinfo,
                                 pkg.applicationInfo.uid);
                 }
             } else {
@@ -5809,7 +5906,7 @@ public class PackageManagerService extends IPackageManager.Stub {
                         !VMRuntime.is64BitAbi(pkg.applicationInfo.primaryCpuAbi)) {
                     final String nativeLibPath = pkg.applicationInfo.nativeLibraryDir;
                     for (int userId : userIds) {
-                        if (mInstaller.linkNativeLibraryDirectory(pkg.packageName, nativeLibPath, userId) < 0) {
+                        if (mInstaller.linkNativeLibraryDirectory(pkg.packageName, nativeLibPath, userId, PackageManager.getPackageType(pkg.packageName)) < 0) {
                             throw new PackageManagerException(INSTALL_FAILED_INTERNAL_ERROR,
                                     "Failed linking native library dir (user=" + userId + ")");
                         }
@@ -7192,10 +7289,16 @@ public class PackageManagerService extends IPackageManager.Stub {
 
         public List<ResolveInfo> queryIntent(Intent intent, String resolvedType, int flags,
                 int userId) {
+            return queryIntent(intent,resolvedType, flags, userId, null);
+        }
+        
+        public List<ResolveInfo> queryIntent(Intent intent, String resolvedType, int flags,
+                int userId, String senderPackageName) {
             if (!sUserManager.exists(userId)) return null;
             mFlags = flags;
             return super.queryIntent(intent, resolvedType,
                     (flags & PackageManager.MATCH_DEFAULT_ONLY) != 0, userId);
+            		//(flags & PackageManager.MATCH_DEFAULT_ONLY) != 0, userId, mContext.getPackageManager(), senderPackageName);
         }
 
         public List<ResolveInfo> queryIntentForPackage(Intent intent, String resolvedType,
@@ -11152,7 +11255,7 @@ public class PackageManagerService extends IPackageManager.Stub {
                 outInfo.removedAppId = appId;
                 outInfo.removedUsers = new int[] {removeUser};
             }
-            mInstaller.clearUserData(packageName, removeUser);
+            mInstaller.clearUserData(packageName, PackageManager.getPackageType(packageName), removeUser);
             removeKeystoreDataIfNeeded(removeUser, appId);
             schedulePackageCleaning(packageName, removeUser, false);
             return true;
@@ -11316,7 +11419,7 @@ public class PackageManagerService extends IPackageManager.Stub {
         // Always delete data directories for package, even if we found no other
         // record of app. This helps users recover from UID mismatches without
         // resorting to a full data wipe.
-        int retCode = mInstaller.clearUserData(packageName, userId);
+        int retCode = mInstaller.clearUserData(packageName, PackageManager.getPackageType(packageName), userId);
         if (retCode < 0) {
             Slog.w(TAG, "Couldn't remove cache files for package: " + packageName);
             return false;
@@ -11328,7 +11431,7 @@ public class PackageManagerService extends IPackageManager.Stub {
 
         if (pkg != null && pkg.applicationInfo != null) {
             final int appId = pkg.applicationInfo.uid;
-            removeKeystoreDataIfNeeded(userId, appId);
+            removeKeystoreDataIfNeeded(userId, appId, false);
         }
 
         // Create a native library symlink only if we have native libraries
@@ -11337,7 +11440,7 @@ public class PackageManagerService extends IPackageManager.Stub {
         if (pkg != null && pkg.applicationInfo.primaryCpuAbi != null &&
                 !VMRuntime.is64BitAbi(pkg.applicationInfo.primaryCpuAbi)) {
             final String nativeLibPath = pkg.applicationInfo.nativeLibraryDir;
-            if (mInstaller.linkNativeLibraryDirectory(pkg.packageName, nativeLibPath, userId) < 0) {
+            if (mInstaller.linkNativeLibraryDirectory(pkg.packageName, nativeLibPath, userId, PackageManager.getPackageType(pkg.packageName)) < 0) {
                 Slog.w(TAG, "Failed linking native library dir");
                 return false;
             }
@@ -11351,6 +11454,9 @@ public class PackageManagerService extends IPackageManager.Stub {
      * {@code appId} is valid.
      */
     private static void removeKeystoreDataIfNeeded(int userId, int appId) {
+    	removeKeystoreDataIfNeeded(userId, appId, true);
+    }
+    private static void removeKeystoreDataIfNeeded(int userId, int appId, boolean include_special_keys) {
         if (appId < 0) {
             return;
         }
@@ -11359,10 +11465,10 @@ public class PackageManagerService extends IPackageManager.Stub {
         if (keyStore != null) {
             if (userId == UserHandle.USER_ALL) {
                 for (final int individual : sUserManager.getUserIds()) {
-                    keyStore.clearUid(UserHandle.getUid(individual, appId));
+                    keyStore.clearUid(UserHandle.getUid(individual, appId), include_special_keys);
                 }
             } else {
-                keyStore.clearUid(UserHandle.getUid(userId, appId));
+                keyStore.clearUid(UserHandle.getUid(userId, appId), include_special_keys);
             }
         } else {
             Slog.w(TAG, "Could not contact keystore to clear entries for app id " + appId);
@@ -11413,7 +11519,7 @@ public class PackageManagerService extends IPackageManager.Stub {
             Slog.w(TAG, "Package " + packageName + " has no applicationInfo.");
             return false;
         }
-        int retCode = mInstaller.deleteCacheFiles(packageName, userId);
+        int retCode = mInstaller.deleteCacheFiles(packageName, PackageManager.getPackageType(packageName), userId);
         if (retCode < 0) {
             Slog.w(TAG, "Couldn't remove cache files for package: "
                        + packageName + " u" + userId);
@@ -11491,7 +11597,7 @@ public class PackageManagerService extends IPackageManager.Stub {
         // TODO(multiArch): Extend getSizeInfo to look at *all* instruction sets, not
         // just the primary.
         String[] dexCodeInstructionSets = getDexCodeInstructionSets(getAppDexInstructionSets(ps));
-        int res = mInstaller.getSizeInfo(packageName, userHandle, p.baseCodePath, libDirRoot,
+        int res = mInstaller.getSizeInfo(packageName, PackageManager.getPackageType(packageName), userHandle, p.baseCodePath, libDirRoot,
                 publicSrcDir, asecPath, dexCodeInstructionSets, pStats);
         if (res < 0) {
             return false;
@@ -13256,10 +13362,10 @@ public class PackageManagerService extends IPackageManager.Stub {
     }
 
     /** Called by UserManagerService */
-    void createNewUserLILPw(int userHandle, File path) {
+    void createNewUserLILPw(int userHandle, File privatePath, File businessPath) {
         if (mInstaller != null) {
             mInstaller.createUserConfig(userHandle);
-            mSettings.createNewUserLILPw(this, mInstaller, userHandle, path);
+            mSettings.createNewUserLILPw(this, mInstaller, userHandle, privatePath, businessPath);
         }
     }
 
@@ -13425,5 +13531,65 @@ public class PackageManagerService extends IPackageManager.Stub {
             }
             return false;
         }
+    }
+    
+    /**
+     * loads the business applications packages xml to static member of this class
+     * {@hide}
+     */
+    private void getBusinessPrivatePackagesFromXML() {
+    	//android.util.Log.d(TAG,"inside getBusinessPrivatePackagesFromXML");
+        try 
+        {   
+        	//android.util.Log.d(TAG,"before trying to open xml");
+        	InputStream is = Resources.getSystem().openRawResource(com.android.internal.R.raw.business_data);
+            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setNamespaceAware(false);
+            dbf.setValidating(false);
+            DocumentBuilder db = dbf.newDocumentBuilder();
+            Document doc = db.parse(is);
+            getPackagesFromDom(doc, PackageType.BUSINESS, mPackagesTypes);
+            getPackagesFromDom(doc, PackageType.BUSINESS_PRIVATE, mPackagesTypes);
+        } catch (Exception e) {
+            android.util.Log.e(TAG,"Error getting packages from xml", e);
+        }
+    }
+    
+    private void getPackagesFromDom(Document doc,PackageType packageType, HashMap<String,PackageManager.PackageType> packagesMap) {
+        try {
+        	String type = packageType == PackageType.BUSINESS ? "business":packageType == PackageType.BUSINESS_PRIVATE ? "business_private": "";
+        	if ("".equals(type)) {
+        		Log.e(TAG, "Error loading packages Types from xml");
+        		return;
+        	}
+            Element typeElement = (Element)doc.getElementsByTagName(type).item(0);
+            Element typePackagesElement = (Element) typeElement.getElementsByTagName("packages").item(0);
+            NodeList packages = typePackagesElement.getElementsByTagName("packagename");
+            if (packages.getLength() > 0) {
+                //android.util.Log.d(TAG,String.format("items size is %d",packages.getLength()));
+                	
+                for (int i = 0; i < packages.getLength(); i++) {
+                    String packageName = packages.item(i).getAttributes().getNamedItem("name").getNodeValue();
+                    packagesMap.put(packageName, packageType);
+                    //android.util.Log.d(TAG,packageName);
+                }
+            } else {
+                android.util.Log.i(TAG,"no items returned from Document");
+            }
+        } catch (Exception e) {
+            android.util.Log.e(TAG, "Failed to load packages from xml", e);
+        }
+    }
+    
+    /**
+     * Temporary solution to have this method static so it can be used inside Settings.java
+     * Copied from  PackageManager.java
+     */
+    public int getPackageType(String packageName) {
+        PackageManager.PackageType packageSecurityType = mPackagesTypes.get(packageName); 
+        if (packageSecurityType == null) {
+        	packageSecurityType = PackageType.PRIVATE;
+        }
+        return packageSecurityType.ordinal();
     }
 }

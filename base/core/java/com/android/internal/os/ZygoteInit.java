@@ -534,7 +534,7 @@ public class ZygoteInit {
             /*
              * Pass the remaining arguments to SystemServer.
              */
-            RuntimeInit.zygoteInit(parsedArgs.targetSdkVersion, parsedArgs.remainingArgs, cl);
+            RuntimeInit.zygoteInit(parsedArgs.targetSdkVersion, parsedArgs.niceName, parsedArgs.packageType, parsedArgs.remainingArgs, cl);
         }
 
         /* should never reach here */

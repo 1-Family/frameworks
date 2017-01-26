@@ -75,6 +75,8 @@ public final class AssetManager implements AutoCloseable {
     
     private int mNumRefs = 1;
     private boolean mOpen = true;
+    private String mPackageName;
+    
     private HashMap<Long, RuntimeException> mRefStacks;
  
     /**
@@ -801,4 +803,16 @@ public final class AssetManager implements AutoCloseable {
             destroy();
         }
     }
+    /**
+     * @hide
+     */
+	public String getPackageName() {
+		return mPackageName;
+	}
+	/**
+	 * @hide
+	 */
+	public void setPackageName(String packageName) {
+		this.mPackageName = packageName;
+	}
 }

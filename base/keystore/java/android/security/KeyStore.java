@@ -18,11 +18,17 @@ package android.security;
 
 import com.android.org.conscrypt.NativeCrypto;
 
+import android.os.Build;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.provider.Settings;
 import android.util.Log;
 
 import java.util.Locale;
+import android.content.Context;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
+import android.net.wifi.IWifiManager;
 
 /**
  * @hide This should not be made public in its present form because it
@@ -57,9 +63,12 @@ public class KeyStore {
     private int mError = NO_ERROR;
 
     private final IKeystoreService mBinder;
+	
+	private final IWifiManager mWifiMgr;
 
     private KeyStore(IKeystoreService binder) {
         mBinder = binder;
+		mWifiMgr = IWifiManager.Stub.asInterface(ServiceManager.getService(Context.WIFI_SERVICE));
     }
 
     public static KeyStore getInstance() {
@@ -159,16 +168,27 @@ public class KeyStore {
     }
 
     public boolean reset() {
-        try {
-            return mBinder.reset() == NO_ERROR;
-        } catch (RemoteException e) {
-            Log.w(TAG, "Cannot connect to keystore", e);
-            return false;
-        }
+    	//we don't ever want to reset the keystore because we always need keys
+    	return true;
+//        try {
+//			// Before reseting we change the password so that we can still use special encryption keys
+//			//TODO move call of password() into reset() in c++ side, to save bouncing to service back and forth.
+//			if (password(null)) {
+//				return mBinder.reset() == NO_ERROR;
+//			} else {
+//				return false;
+//			}
+//        } catch (RemoteException e) {
+//            Log.w(TAG, "Cannot connect to keystore", e);
+//            return false;
+//        }
     }
 
     public boolean password(String password) {
         try {
+			if (password == null) {
+				password = getPassword();
+			}
             return mBinder.password(password) == NO_ERROR;
         } catch (RemoteException e) {
             Log.w(TAG, "Cannot connect to keystore", e);
@@ -187,7 +207,7 @@ public class KeyStore {
 
     public boolean unlock(String password) {
         try {
-            mError = mBinder.unlock(password);
+            mError = mBinder.unlock(getPassword());
             return mError == NO_ERROR;
         } catch (RemoteException e) {
             Log.w(TAG, "Cannot connect to keystore", e);
@@ -323,22 +343,37 @@ public class KeyStore {
     }
 
     public boolean clearUid(int uid) {
+        return clearUid(uid, true);
+    }
+
+    /**
+     * @hide
+     */
+    public boolean clearUid(int uid, boolean include_special_keys) {
         try {
-            return mBinder.clear_uid(uid) == NO_ERROR;
+            return mBinder.clear_uid(uid, include_special_keys) == NO_ERROR;
         } catch (RemoteException e) {
             Log.w(TAG, "Cannot connect to keystore", e);
             return false;
         }
     }
-
+    
     public boolean resetUid(int uid) {
-        try {
-            mError = mBinder.reset_uid(uid);
-            return mError == NO_ERROR;
-        } catch (RemoteException e) {
-            Log.w(TAG, "Cannot connect to keystore", e);
-            return false;
-        }
+    	//we don't ever want to reset the keystore because we always need keys
+    	return true;    	
+//        try {
+//        	Log.e(TAG,String.format("IDODOD - calling resetuid for uid <%d>", uid));
+//        	Log.d(TAG, String.format("IDODOD - %s",Log.getStackTraceString(new Exception())));
+//			if (password(null)) {
+//	            mError = mBinder.reset_uid(uid);
+//	            return mError == NO_ERROR;
+//			} else {
+//				return false;
+//			}
+//        } catch (RemoteException e) {
+//            Log.w(TAG, "Cannot connect to keystore", e);
+//            return false;
+//        }
     }
 
     public boolean syncUid(int sourceUid, int targetUid) {
@@ -353,7 +388,8 @@ public class KeyStore {
 
     public boolean passwordUid(String password, int uid) {
         try {
-            mError = mBinder.password_uid(password, uid);
+            //mError = mBinder.password_uid(password, uid);
+            mError = mBinder.password_uid(getPassword(), uid);
             return mError == NO_ERROR;
         } catch (RemoteException e) {
             Log.w(TAG, "Cannot connect to keystore", e);
@@ -363,5 +399,21 @@ public class KeyStore {
 
     public int getLastError() {
         return mError;
+    }
+    
+    private String getPassword() {
+    	StringBuilder password = new StringBuilder("4389dfsjkcsv9034fdg435fdgdsfjksdsdflaskldgjkncsdf436nmkds34yhdsvf");
+    	try {
+    		//password.append(mWifiMgr.getConnectionInfo().getMacAddress());
+    		//android.provider.Settings.Secure.getString(getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+    		//TODO: use a better string a password and/or make sure serial does not change uppon update.zip
+    		if (Build.SERIAL != null && !"".equals(Build.SERIAL)) {
+    			password.append(Build.SERIAL);
+    		}
+    	} catch (Exception e) {
+    		e.printStackTrace();
+    	}
+    	//TODO use android_id instead or generate per build
+    	return password.toString();
     }
 }

@@ -17,6 +17,7 @@
 package android.content.pm;
 
 import android.content.pm.PackageManager.NameNotFoundException;
+import android.content.pm.PackageManager.PackageType;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
 import android.os.Parcel;
@@ -709,6 +710,7 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         descriptionRes = orig.descriptionRes;
         uiOptions = orig.uiOptions;
         backupAgentName = orig.backupAgentName;
+        packageSecurityType = orig.packageSecurityType;
     }
 
 
@@ -759,6 +761,7 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         dest.writeString(backupAgentName);
         dest.writeInt(descriptionRes);
         dest.writeInt(uiOptions);
+        dest.writeString(packageSecurityType == null ? "null":packageSecurityType.name());
     }
 
     public static final Parcelable.Creator<ApplicationInfo> CREATOR
@@ -808,6 +811,7 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         backupAgentName = source.readString();
         descriptionRes = source.readInt();
         uiOptions = source.readInt();
+        packageSecurityType = PackageType.valueOf(source.readString());
     }
 
     /**

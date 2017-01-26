@@ -20,12 +20,18 @@ import android.util.Pools.SynchronizedPool;
 import android.view.ViewDebug;
 import com.android.internal.util.XmlUtils;
 
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 
 import android.annotation.Nullable;
 import android.content.pm.ActivityInfo;
+import android.graphics.Bitmap;
+import android.graphics.IndicatorBitmapFactory;
 import android.graphics.Movie;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable.ConstantState;
@@ -44,7 +50,11 @@ import android.util.LongSparseArray;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Locale;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
 
 import libcore.icu.NativePluralRules;
 
@@ -125,6 +135,10 @@ public class Resources {
     private final int[] mCachedXmlBlockIds = { 0, 0, 0, 0 };
     private final XmlBlock[] mCachedXmlBlocks = new XmlBlock[4];
 
+    private static HashMap<String, ArrayList<Integer>> mIcons = new HashMap<String, ArrayList<Integer>>();
+    private static ArrayList<String> mBusinessPackages = null;
+    private static ArrayList<String> mBusinessPrivatePackages = null;
+    private static IndicatorBitmapFactory mIndicatorBitmapFactory = null;
     final AssetManager mAssets;
     final DisplayMetrics mMetrics = new DisplayMetrics();
 
@@ -231,6 +245,8 @@ public class Resources {
         mToken = new WeakReference<IBinder>(token);
         updateConfiguration(config, metrics);
         assets.ensureStringBlocks();
+        getBusinessPrivatePackagesFromXML();
+        mIndicatorBitmapFactory = IndicatorBitmapFactory.getInstance(this);
     }
 
     /**
@@ -2408,7 +2424,7 @@ public class Resources {
             Log.v(TAG, "Loading drawable for cookie " + value.assetCookie + ": " + file);
         }
 
-        final Drawable dr;
+        Drawable dr;
 
         Trace.traceBegin(Trace.TRACE_TAG_RESOURCES, file);
         try {
@@ -2422,6 +2438,11 @@ public class Resources {
                         value.assetCookie, file, AssetManager.ACCESS_STREAMING);
                 dr = Drawable.createFromResourceStream(this, value, is, file, null);
                 is.close();
+				if (isIcon(id)) {
+					dr = getDrawableWithIndicators(dr, id);
+				} /*else {
+					android.util.Log.d(TAG,String.format("packageName=<%s>,res_name=<%s>,id=<%d>",getResourcePackageName(id),getResourceName(id), id));
+				}*/
             }
         } catch (Exception e) {
             Trace.traceEnd(Trace.TRACE_TAG_RESOURCES);
@@ -2673,5 +2694,117 @@ public class Resources {
         mMetrics.setToDefaults();
         updateConfiguration(null, null);
         mAssets.ensureStringBlocks();
+        getBusinessPrivatePackagesFromXML();
+        mIndicatorBitmapFactory = IndicatorBitmapFactory.getInstance(this);
+    }  
+    /**
+     * Check whether the given resource id is one of the current packages' icon
+     * {@hide}
+     */     
+    private boolean isIcon(int id) {
+    	String packageName = mAssets.getPackageName();
+    	if (packageName == null) {
+        	packageName = getResourcePackageName(id);
+    	}
+    	return mIcons.containsKey(packageName) ? (mIcons.get(packageName).contains(id)):false;
+    	/*
+    	//If you want to make specific icons from GO Launcher to be with frames as well
+    	boolean rv1 = mIcons.containsKey(packageName) ? (mIcons.get(packageName).contains(id)):false;
+    	//boolean rv2 = (packageName.equals("com.gau.go.launcherex") && id == 2130838726);
+    	return rv1 || rv2;*/
     }
+    /**
+     * Adds the given icon to the static member which holds all of the packages' icons
+     * {@hide}
+     */    
+    public static void addIcon(String packageName,int icon) {
+    	if (!mIcons.containsKey(packageName)) {
+    		ArrayList<Integer> icons_list = new ArrayList<Integer>();
+    		mIcons.put(packageName, icons_list);
+    	}
+    	ArrayList<Integer> iconsList = mIcons.get(packageName);
+    	if (!iconsList.contains(icon)) {
+    		//android.util.Log.d(TAG,String.format("packageName=<%s>,icon=<%d>",packageName,icon));
+        	iconsList.add(icon);    		
+    	}
+    }    
+    /**
+     * loads the business applications packages xml to static member of this class
+     * {@hide}
+     */
+    private void getBusinessPrivatePackagesFromXML() {
+    	//android.util.Log.d(TAG,"inside getBusinessPrivatePackagesFromXML");
+    	if(mBusinessPackages == null || mBusinessPrivatePackages == null) {
+            try 
+            {   
+            	//android.util.Log.d(TAG,"before trying to open xml");
+            	InputStream is = openRawResource(com.android.internal.R.raw.business_data);
+                DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+                dbf.setNamespaceAware(false);
+                dbf.setValidating(false);
+                DocumentBuilder db = dbf.newDocumentBuilder();
+                Document doc = db.parse(is);
+                mBusinessPackages = getPackagesFromDom(doc, "business");
+                mBusinessPrivatePackages = getPackagesFromDom(doc, "business_private");
+            } catch (Exception e) {
+                android.util.Log.e(TAG,e.getMessage() == null ? "exception is null":e.getMessage());
+            }
+    	}
+    }
+    private ArrayList<String> getPackagesFromDom(Document doc,String type) {
+        try {
+            Element typeElement = (Element)doc.getElementsByTagName(type).item(0);
+            Element typePackagesElement = (Element) typeElement.getElementsByTagName("packages").item(0);
+            NodeList packages = typePackagesElement.getElementsByTagName("packagename");
+            if (packages.getLength() > 0) {
+                //android.util.Log.d(TAG,String.format("items size is %d",packages.getLength()));
+                ArrayList<String> packagesList = new ArrayList<String>();
+                for (int i = 0; i < packages.getLength(); i++) {
+                    String packageName = packages.item(i).getAttributes().getNamedItem("name").getNodeValue();
+                    packagesList.add(packageName);
+                    android.util.Log.d(TAG,packageName);
+                }
+                return packagesList;
+            } else {
+                android.util.Log.i(TAG,"no items returned from Document");
+            }
+        } catch (Exception e) {
+            android.util.Log.e(TAG,e.getMessage() == null ? "Failed to load packages from xml":e.getMessage());
+        }
+        return null;
+    }
+    /**
+     * Returns the given bitmap with a frame in the color which suites the given resource id
+     * {@hide}
+     */
+    public Bitmap getBitmapWithIndicators(Bitmap src, int resourceId) {
+    	if (isIcon(resourceId)) {
+        	String packageName = mAssets.getPackageName();
+        	if (packageName == null) {
+                	packageName = getResourcePackageName(resourceId);
+        	}
+
+    	    if (mBusinessPackages != null && mBusinessPackages.contains(packageName)) {
+	            //Log.d(TAG, "getting business icon");
+	            return mIndicatorBitmapFactory.getBusinessBitmap(src);
+	        } else if(mBusinessPrivatePackages != null && mBusinessPrivatePackages.contains(packageName)) {
+	            //Log.d(TAG, "getting business private icon");
+	            return mIndicatorBitmapFactory.getBusinessPrivateBitmap(src);
+	        } else {//assuming private
+	            //Log.d(TAG, "getting private icon");
+	            return mIndicatorBitmapFactory.getPrivateBitmap(src);
+	        }
+    	}
+    	return src;
+	}
+    /**
+     * Returns the given drawable with a frame in the color which suites the given resource id
+     * {@hide}
+     */    
+	private Drawable getDrawableWithIndicators(Drawable drawable, int resourceId) {
+	    Bitmap bitmap = ((BitmapDrawable)drawable).getBitmap();   
+	    BitmapDrawable dn = new BitmapDrawable(this, getBitmapWithIndicators(bitmap,resourceId));
+	    dn.setBounds(drawable.getBounds());
+	    return dn;
+	}
 }

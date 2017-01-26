@@ -315,6 +315,19 @@ public class Environment {
     private static final File DATA_DIRECTORY
             = getDirectory("ANDROID_DATA", "/data");
 
+    private static final File PRIVATE_DATA_DIRECTORY
+    		= getDirectory("ANDROID_PRIVATE_DATA", "/data/private_data");
+    
+    /* Dont want to give anyone the option to nge this path by changing the environment variable
+    private static final File BUSINESS_DATA_DIRECTORY
+			= getDirectory("ANDROID_BUSINESS_DATA", "/data/business_data");*/    
+
+    private static final File BUSINESS_DATA_DIRECTORY = new File("/data/business_data");
+    
+    
+    private static final File PRIVATE_USER_DIRECTORY = new File("/data/private_user");
+    
+    private static final File BUSINESS_USER_DIRECTORY = new File("/data/business_user");
     /**
      * @hide
      */
@@ -329,7 +342,31 @@ public class Environment {
     public static File getDataDirectory() {
         return DATA_DIRECTORY;
     }
+    /**
+     * @hide
+     */
+    public static File getPrivateDataDirectory() {
+        return PRIVATE_DATA_DIRECTORY;
+    }
 
+    /**
+     * @hide
+     */
+    public static File getBusinessDataDirectory() {
+        return BUSINESS_DATA_DIRECTORY;
+    }
+    /**
+     * @hide
+     */
+    public static File getPrivateUserDirectory() {
+        return PRIVATE_USER_DIRECTORY;
+    }
+    /**
+     * @hide
+     */
+    public static File getBusinessUserDirectory() {
+        return BUSINESS_USER_DIRECTORY;
+    }
     /**
      * Return the primary external storage directory. This directory may not
      * currently be accessible if it has been mounted by the user on their

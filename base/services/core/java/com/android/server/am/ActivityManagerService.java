@@ -142,6 +142,7 @@ import android.content.pm.IPackageManager;
 import android.content.pm.InstrumentationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.PackageManager.PackageType;
 import android.content.pm.ParceledListSlice;
 import android.content.pm.UserInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
@@ -231,8 +232,8 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class ActivityManagerService extends ActivityManagerNative
         implements Watchdog.Monitor, BatteryStatsImpl.BatteryCallback {
-
-    private static final String USER_DATA_DIR = "/data/user/";
+	//use getDataDirForUser instead of USER_DATA_DIR
+    //private static final String USER_DATA_DIR = "/data/user/";
     // File that stores last updated system version and called preboot receivers
     static final String CALLED_PRE_BOOTS_FILENAME = "called_pre_boots.dat";
 
@@ -3190,7 +3191,7 @@ public final class ActivityManagerService extends ActivityManagerNative
             if (entryPoint == null) entryPoint = "android.app.ActivityThread";
             checkTime(startTime, "startProcess: asking zygote to start proc");
             Process.ProcessStartResult startResult = Process.start(entryPoint,
-                    app.processName, uid, uid, gids, debugFlags, mountExternal,
+                    app.processName, app.pkgSecurityType, uid, uid, gids, debugFlags, mountExternal,
                     app.info.targetSdkVersion, app.info.seinfo, requiredAbi, instructionSet,
                     app.info.dataDir, entryPointArgs);
             checkTime(startTime, "startProcess: returned from zygote!");
@@ -3740,6 +3741,10 @@ public final class ActivityManagerService extends ActivityManagerNative
 
             ActivityInfo aInfo = null;
             try {
+            	String[] callingUidPackages = AppGlobals.getPackageManager().getPackagesForUid(Binder.getCallingUid());
+            	if (callingUidPackages != null && callingUidPackages.length > 0) {
+            		intent.setOriginPackage(callingUidPackages[0]);
+            	}
                 List<ResolveInfo> resolves =
                     AppGlobals.getPackageManager().queryIntentActivities(
                             intent, r.resolvedType,
@@ -19023,8 +19028,7 @@ public final class ActivityManagerService extends ActivityManagerNative
         if (info == null) return null;
         ApplicationInfo newInfo = new ApplicationInfo(info);
         newInfo.uid = applyUserId(info.uid, userId);
-        newInfo.dataDir = USER_DATA_DIR + userId + "/"
-                + info.packageName;
+        newInfo.dataDir = PackageManager.getDataDirForUser(userId, info.packageName); 
         return newInfo;
     }
 

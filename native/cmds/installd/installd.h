@@ -51,8 +51,11 @@
 
 /* elements combined with a valid package name to form paths */
 
-#define PRIMARY_USER_PREFIX    "data/"
-#define SECONDARY_USER_PREFIX  "user/"
+#define PRIMARY_DATA_PREFIX			   "data/"
+#define PRIMARY_PRIVATE_USER_PREFIX    "private_data/"
+#define PRIMARY_BUSINESS_USER_PREFIX    "business_data/"
+#define SECONDARY_PRIVATE_USER_PREFIX  "private_user/"
+#define SECONDARY_BUSINESS_USER_PREFIX  "business_user/"
 
 #define PKG_DIR_POSTFIX        ""
 
@@ -130,6 +133,8 @@ typedef struct {
     int8_t* curMemBlockEnd;
 } cache_t;
 
+typedef enum PackageType { PRIVATE, BUSINESS, BUSINESS_PRIVATE, PACKAGE_TYPE_NULL } PackageType;
+
 /* util.c */
 
 int create_pkg_path_in_dir(char path[PKG_PATH_MAX],
@@ -138,11 +143,13 @@ int create_pkg_path_in_dir(char path[PKG_PATH_MAX],
                                 const char* postfix);
 
 int create_pkg_path(char path[PKG_PATH_MAX],
+                    PackageType package_type,
                     const char *pkgname,
                     const char *postfix,
                     userid_t userid);
 
 int create_user_path(char path[PKG_PATH_MAX],
+                    PackageType package_type,
                     userid_t userid);
 
 int create_user_media_path(char path[PKG_PATH_MAX], userid_t userid);
@@ -151,6 +158,7 @@ int create_user_config_path(char path[PKG_PATH_MAX], userid_t userid);
 
 int create_move_path(char path[PKG_PATH_MAX],
                      const char* pkgname,
+                     PackageType package_type,
                      const char* leaf,
                      userid_t userid);
 
@@ -202,26 +210,26 @@ void remove_profile_file(const char *pkgname);
 
 /* commands.c */
 
-int install(const char *pkgname, uid_t uid, gid_t gid, const char *seinfo);
-int uninstall(const char *pkgname, userid_t userid);
-int renamepkg(const char *oldpkgname, const char *newpkgname);
-int fix_uid(const char *pkgname, uid_t uid, gid_t gid);
-int delete_user_data(const char *pkgname, userid_t userid);
-int make_user_data(const char *pkgname, uid_t uid, userid_t userid, const char* seinfo);
+int install(const char *pkgname, PackageType package_type, uid_t uid, gid_t gid, const char *seinfo);
+int uninstall(const char *pkgname, PackageType package_type, userid_t userid);
+int renamepkg(const char *oldpkgname, const char *newpkgname, PackageType package_type);
+int fix_uid(const char *pkgname, PackageType package_type, uid_t uid, gid_t gid);
+int delete_user_data(const char *pkgname, PackageType package_type, userid_t userid);
+int make_user_data(const char *pkgname, PackageType package_type, uid_t uid, userid_t userid, const char* seinfo);
 int make_user_config(userid_t userid);
 int delete_user(userid_t userid);
-int delete_cache(const char *pkgname, userid_t userid);
-int delete_code_cache(const char *pkgname, userid_t userid);
+int delete_cache(const char *pkgname, PackageType package_type, userid_t userid);
+int delete_code_cache(const char *pkgname, PackageType package_type, userid_t userid);
 int move_dex(const char *src, const char *dst, const char *instruction_set);
 int rm_dex(const char *path, const char *instruction_set);
 int protect(char *pkgname, gid_t gid);
-int get_size(const char *pkgname, userid_t userid, const char *apkpath, const char *libdirpath,
+int get_size(const char *pkgname, PackageType package_type, userid_t userid, const char *apkpath, const char *libdirpath,
              const char *fwdlock_apkpath, const char *asecpath, const char *instruction_set,
              int64_t *codesize, int64_t *datasize, int64_t *cachesize, int64_t *asecsize);
 int free_cache(int64_t free_size);
 int dexopt(const char *apk_path, uid_t uid, bool is_public, const char *pkgName,
            const char *instruction_set, bool vm_safe_mode, bool should_relocate);
 int movefiles();
-int linklib(const char* target, const char* source, int userId);
+int linklib(const char* target, const char* source, int userId, PackageType package_type);
 int idmap(const char *target_path, const char *overlay_path, uid_t uid);
 int restorecon_data();

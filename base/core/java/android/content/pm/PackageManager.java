@@ -42,6 +42,7 @@ import android.os.UserHandle;
 import android.util.AndroidException;
 
 import java.io.File;
+import java.util.HashMap;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.List;
@@ -1657,7 +1658,17 @@ public abstract class PackageManager {
      */
     public static final String EXTRA_VERIFICATION_VERSION_CODE
             = "android.content.pm.extra.VERIFICATION_VERSION_CODE";
+    
+    /**
+     * @hide
+     */
+    public enum PackageType {
+ 	   		PRIVATE,
+ 	   		BUSINESS,
+    	    BUSINESS_PRIVATE
+    	} 
 
+    private static HashMap<String, PackageManager.PackageType> mPackagesTypes = null;
     /**
      * The action used to request that the user approve a permission request
      * from the application.
@@ -3866,12 +3877,65 @@ public abstract class PackageManager {
      */
     public abstract VerifierDeviceIdentity getVerifierDeviceIdentity();
 
+/*    *//**
+     * Returns the data directory for a particular user and package, given the uid of the package.
+     * @param uid uid of the package, including the userId and appId
+     * @param packageName name of the package
+     * @return the user-specific data directory for the package
+     * @hide
+     *//*
+    public static String getDataDirForUser(int userId, String packageName) {
+        // TODO: This should be shared with Installer's knowledge of user directory
+    	return PackageManagerService.getDataDirForUser(userId, packageName);
+    }*/
+    
+    /**
+     * Set the packages map, used by PackageManagerService.java
+     * @hide
+     */
+    public static void setPackagesTypes(HashMap<String, PackageManager.PackageType> packagesTypes) {
+    	if (mPackagesTypes == null) {//allow setting only once
+    		mPackagesTypes = packagesTypes;
+    	}
+    }
+    
+    /**
+     * Temporary solution to have this method static so it can be used inside Settings.java
+     * A more proper solution is to move getBusinessPrivatePackagesFromXML, getPackagesFromDom
+     * and this method to Settings.java and/or save/load the information in /data/system/packages.xml
+     * which holds info for the packages anyway.
+     * @hide
+     */
+    public static PackageType getPackageType(String packageName) {
+        PackageManager.PackageType packageSecurityType = mPackagesTypes.get(packageName); 
+        if (packageSecurityType == null) {
+        	packageSecurityType = PackageType.PRIVATE;
+        }
+        return packageSecurityType;
+    }
+    
     /**
      * Return interface that offers the ability to install, upgrade, and remove
      * applications on the device.
      */
     public abstract @NonNull PackageInstaller getPackageInstaller();
-
+    
+    /**
+     * Returns the data directory(partitions) for a particular package
+     * @param packageName name of the package
+     * @return the data directory(partitions) for the package
+     * @hide
+     */
+    public static String getDataDirForPackage(String packageName) {
+    	PackageType packageType = getPackageType(packageName);
+    	String dataDir = null;
+    	if (packageType == PackageType.BUSINESS || packageType == PackageType.BUSINESS_PRIVATE) {
+    		dataDir = Environment.getBusinessDataDirectory().toString();
+    	} else {
+    		dataDir = Environment.getPrivateDataDirectory().toString();		
+    	}
+    	return dataDir;
+    }
     /**
      * Returns the data directory for a particular user and package, given the uid of the package.
      * @param uid uid of the package, including the userId and appId
@@ -3880,9 +3944,15 @@ public abstract class PackageManager {
      * @hide
      */
     public static String getDataDirForUser(int userId, String packageName) {
-        // TODO: This should be shared with Installer's knowledge of user directory
-        return Environment.getDataDirectory().toString() + "/user/" + userId
-                + "/" + packageName;
+    	PackageType packageType = getPackageType(packageName);
+    	String userDir = null;
+    	if (packageType == PackageType.BUSINESS || packageType == PackageType.BUSINESS_PRIVATE) {
+    		userDir = Environment.getBusinessUserDirectory().toString();
+    	} else {
+    		userDir = Environment.getPrivateUserDirectory().toString();
+    	}
+    	return String.format("%s%s%d%s%s", userDir, File.separator, 
+    									userId, File.separator, packageName);
     }
 
     /**

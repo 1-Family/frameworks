@@ -16,6 +16,7 @@
 
 package com.android.server.pm;
 
+import android.content.pm.PackageManager.PackageType;
 import android.content.Context;
 import android.content.pm.PackageStats;
 import android.os.Build;
@@ -41,10 +42,12 @@ public final class Installer extends SystemService {
         ping();
     }
 
-    public int install(String name, int uid, int gid, String seinfo) {
+    public int install(String name, PackageType packageType, int uid, int gid, String seinfo) {
         StringBuilder builder = new StringBuilder("install");
         builder.append(' ');
         builder.append(name);
+        builder.append(' ');
+        builder.append(packageType.ordinal());
         builder.append(' ');
         builder.append(uid);
         builder.append(' ');
@@ -133,28 +136,34 @@ public final class Installer extends SystemService {
         return mInstaller.execute(builder.toString());
     }
 
-    public int remove(String name, int userId) {
+    public int remove(String name, PackageType packageType, int userId) {
         StringBuilder builder = new StringBuilder("remove");
         builder.append(' ');
         builder.append(name);
+        builder.append(' ');
+        builder.append(packageType.ordinal());        
         builder.append(' ');
         builder.append(userId);
         return mInstaller.execute(builder.toString());
     }
 
-    public int rename(String oldname, String newname) {
+    public int rename(String oldname, String newname, PackageType packageType) {
         StringBuilder builder = new StringBuilder("rename");
         builder.append(' ');
         builder.append(oldname);
         builder.append(' ');
         builder.append(newname);
+        builder.append(' ');
+        builder.append(packageType.ordinal());        
         return mInstaller.execute(builder.toString());
     }
 
-    public int fixUid(String name, int uid, int gid) {
+    public int fixUid(String name, PackageType package_type, int uid, int gid) {
         StringBuilder builder = new StringBuilder("fixuid");
         builder.append(' ');
         builder.append(name);
+        builder.append(' ');
+        builder.append(package_type);        
         builder.append(' ');
         builder.append(uid);
         builder.append(' ');
@@ -162,28 +171,34 @@ public final class Installer extends SystemService {
         return mInstaller.execute(builder.toString());
     }
 
-    public int deleteCacheFiles(String name, int userId) {
+    public int deleteCacheFiles(String name, PackageType packageType, int userId) {
         StringBuilder builder = new StringBuilder("rmcache");
         builder.append(' ');
         builder.append(name);
         builder.append(' ');
+        builder.append(packageType.ordinal());        
+        builder.append(' ');
         builder.append(userId);
         return mInstaller.execute(builder.toString());
     }
 
-    public int deleteCodeCacheFiles(String name, int userId) {
+    public int deleteCodeCacheFiles(String name, PackageType packageType, int userId) {
         StringBuilder builder = new StringBuilder("rmcodecache");
         builder.append(' ');
         builder.append(name);
         builder.append(' ');
+        builder.append(packageType.ordinal());        
+        builder.append(' ');
         builder.append(userId);
         return mInstaller.execute(builder.toString());
     }
 
-    public int createUserData(String name, int uid, int userId, String seinfo) {
+    public int createUserData(String name, PackageType packageType, int uid, int userId, String seinfo) {	
         StringBuilder builder = new StringBuilder("mkuserdata");
         builder.append(' ');
         builder.append(name);
+        builder.append(' ');
+        builder.append(packageType.ordinal());        
         builder.append(' ');
         builder.append(uid);
         builder.append(' ');
@@ -207,10 +222,12 @@ public final class Installer extends SystemService {
         return mInstaller.execute(builder.toString());
     }
 
-    public int clearUserData(String name, int userId) {
+    public int clearUserData(String name, PackageType packageType, int userId) {
         StringBuilder builder = new StringBuilder("rmuserdata");
         builder.append(' ');
         builder.append(name);
+        builder.append(' ');
+        builder.append(packageType.ordinal());        
         builder.append(' ');
         builder.append(userId);
         return mInstaller.execute(builder.toString());
@@ -231,7 +248,7 @@ public final class Installer extends SystemService {
         return mInstaller.execute(builder.toString());
     }
 
-    public int getSizeInfo(String pkgName, int persona, String apkPath, String libDirPath,
+    public int getSizeInfo(String pkgName, PackageType packageType, int persona, String apkPath, String libDirPath,
             String fwdLockApkPath, String asecPath, String[] instructionSets, PackageStats pStats) {
         for (String instructionSet : instructionSets) {
             if (!isValidInstructionSet(instructionSet)) {
@@ -243,6 +260,8 @@ public final class Installer extends SystemService {
         StringBuilder builder = new StringBuilder("getsize");
         builder.append(' ');
         builder.append(pkgName);
+        builder.append(' ');
+        builder.append(packageType.ordinal());        
         builder.append(' ');
         builder.append(persona);
         builder.append(' ');
@@ -288,7 +307,7 @@ public final class Installer extends SystemService {
      *
      * @return -1 on error
      */
-    public int linkNativeLibraryDirectory(String dataPath, String nativeLibPath32, int userId) {
+    public int linkNativeLibraryDirectory(String dataPath, String nativeLibPath32, int userId, PackageType packageType) {
         if (dataPath == null) {
             Slog.e(TAG, "linkNativeLibraryDirectory dataPath is null");
             return -1;
@@ -303,14 +322,18 @@ public final class Installer extends SystemService {
         builder.append(nativeLibPath32);
         builder.append(' ');
         builder.append(userId);
+	builder.append(' ');
+        builder.append(packageType.ordinal());
 
         return mInstaller.execute(builder.toString());
     }
 
-    public boolean restoreconData(String pkgName, String seinfo, int uid) {
+    public boolean restoreconData(String pkgName, PackageType packageType, String seinfo, int uid) {
         StringBuilder builder = new StringBuilder("restorecondata");
         builder.append(' ');
         builder.append(pkgName);
+        builder.append(' ');
+        builder.append(packageType.ordinal());
         builder.append(' ');
         builder.append(seinfo != null ? seinfo : "!");
         builder.append(' ');

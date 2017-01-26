@@ -30,9 +30,49 @@ dir_rec_t android_app_lib_dir;
 dir_rec_t android_media_dir;
 dir_rec_array_t android_system_dirs;
 
-int install(const char *pkgname, uid_t uid, gid_t gid, const char *seinfo)
+static void run_keystore_generate()
 {
+    static const char* KEYSTORE_BIN = "/system/bin/keystore_cli";
+    execl(KEYSTORE_BIN, KEYSTORE_BIN, "generate", (char*) NULL);
+    ALOGE("execl(%s) failed: %s\n", KEYSTORE_BIN, strerror(errno));
+}
+
+static int wait_keystore(pid_t pid)
+{
+    int status;
+    pid_t got_pid;
+
+    /*
+     * Wait for the optimization process to finish.
+     */
+    while (1) {
+        got_pid = waitpid(pid, &status, 0);
+        if (got_pid == -1 && errno == EINTR) {
+        	ALOGW("waitpid interrupted, retrying\n");
+        } else {
+            break;
+        }
+    }
+    if (got_pid != pid) {
+        ALOGW("waitpid failed: wanted %d, got %d: %s\n",
+            (int) pid, (int) got_pid, strerror(errno));
+        return 1;
+    }
+
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        ALOGV("Created key successfully\n");
+        return 0;
+    } else {
+    	ALOGE("Failed to create key, status=0x%04x\n", status);
+        return status;      /* always nonzero */
+    }
+}
+
+int install(const char *pkgname, PackageType package_type, uid_t uid, gid_t gid, const char *seinfo)
+{
+	int rc = 0;
     char pkgdir[PKG_PATH_MAX];
+    char pkgdirsymlink[PKG_PATH_MAX];
     char libsymlink[PKG_PATH_MAX];
     char applibdir[PKG_PATH_MAX];
     struct stat libStat;
@@ -42,12 +82,17 @@ int install(const char *pkgname, uid_t uid, gid_t gid, const char *seinfo)
         return -1;
     }
 
-    if (create_pkg_path(pkgdir, pkgname, PKG_DIR_POSTFIX, 0)) {
+    if (create_pkg_path(pkgdir, package_type, pkgname, PKG_DIR_POSTFIX, 0)) {
         ALOGE("cannot create package path\n");
         return -1;
     }
 
-    if (create_pkg_path(libsymlink, pkgname, PKG_LIB_POSTFIX, 0)) {
+	if (create_pkg_path(pkgdirsymlink, PACKAGE_TYPE_NULL, pkgname, PKG_DIR_POSTFIX, 0)) {
+		ALOGE("cannot create package path\n");
+		return -1;
+	}
+
+    if (create_pkg_path(libsymlink, package_type, pkgname, PKG_LIB_POSTFIX, 0)) {
         ALOGE("cannot create package lib symlink origin path\n");
         return -1;
     }
@@ -86,8 +131,23 @@ int install(const char *pkgname, uid_t uid, gid_t gid, const char *seinfo)
         }
     }
 
+	if (lstat(pkgdirsymlink, &libStat) >= 0) {
+		if (S_ISDIR(libStat.st_mode)) {
+			if (delete_dir_contents(pkgdirsymlink, 1, NULL) < 0) {
+				ALOGE("couldn't delete /data/data/* directory during install for: %s", pkgdirsymlink);
+				return -1;
+			}
+		} else if (S_ISLNK(libStat.st_mode)) {
+			if (unlink(pkgdirsymlink) < 0) {
+				ALOGE("couldn't unlink package /data/data/* directory during install for: %s", pkgdirsymlink);
+				return -1;
+			}
+		}
+	}
+
     if (selinux_android_setfilecon(pkgdir, pkgname, seinfo, uid) < 0) {
         ALOGE("cannot setfilecon dir '%s': %s\n", pkgdir, strerror(errno));
+        unlink(pkgdirsymlink);
         unlink(libsymlink);
         unlink(pkgdir);
         return -errno;
@@ -100,6 +160,13 @@ int install(const char *pkgname, uid_t uid, gid_t gid, const char *seinfo)
         return -1;
     }
 
+	if (symlink(pkgdir, pkgdirsymlink) < 0) {
+		ALOGE("couldn't symlink directory '%s' -> '%s': %s\n", pkgdirsymlink, pkgdir,
+				strerror(errno));
+		unlink(pkgdir);
+		return -1;
+	}
+
     if (chown(pkgdir, uid, gid) < 0) {
         ALOGE("cannot chown dir '%s': %s\n", pkgdir, strerror(errno));
         unlink(libsymlink);
@@ -107,30 +174,74 @@ int install(const char *pkgname, uid_t uid, gid_t gid, const char *seinfo)
         return -1;
     }
 
-    return 0;
+    if (package_type == BUSINESS || package_type == BUSINESS_PRIVATE) {
+    	pid_t pid;
+		pid = fork();
+		if (pid == 0) {
+			/* child -- drop privileges before continuing */
+			if (setgid(uid) != 0) {
+				ALOGE("setgid(%d) failed during dexopt\n", uid);
+				exit(64);
+			}
+			if (setuid(uid) != 0) {
+				ALOGE("setuid(%d) during keystore_cli\n", uid);
+				exit(65);
+			}
+			// drop capabilities
+			struct __user_cap_header_struct capheader;
+			struct __user_cap_data_struct capdata[2];
+			memset(&capheader, 0, sizeof(capheader));
+			memset(&capdata, 0, sizeof(capdata));
+			capheader.version = _LINUX_CAPABILITY_VERSION_3;
+			if (capset(&capheader, &capdata[0]) < 0) {
+				ALOGE("capset failed: %s\n", strerror(errno));
+				exit(66);
+			}
+
+			run_keystore_generate();
+			exit(68);   /* only get here on exec failure */
+		} else {
+			rc = wait_keystore(pid);
+			if (rc != 0) {
+				ALOGE("keystore_cli failed on, res = %d\n", rc);
+			}
+		}
+    }
+
+    return rc;
 }
 
-int uninstall(const char *pkgname, userid_t userid)
+int uninstall(const char *pkgname,PackageType package_type, userid_t userid)
 {
     char pkgdir[PKG_PATH_MAX];
+    char pkgdirsymlink[PKG_PATH_MAX];
 
-    if (create_pkg_path(pkgdir, pkgname, PKG_DIR_POSTFIX, userid))
+    if (create_pkg_path(pkgdir, package_type, pkgname, PKG_DIR_POSTFIX, userid))
         return -1;
+
+    if (userid == 0) {
+    	if (create_pkg_path(pkgdirsymlink, PACKAGE_TYPE_NULL, pkgname, PKG_DIR_POSTFIX, userid)) {
+    		return -1;
+    	}
+    }
 
     remove_profile_file(pkgname);
 
+	if (userid == 0 && unlink(pkgdirsymlink) < 0) {
+		ALOGE("cannot unlink '%s': %s\n", pkgdirsymlink, strerror(errno));
+	}
     /* delete contents AND directory, no exceptions */
     return delete_dir_contents(pkgdir, 1, NULL);
 }
 
-int renamepkg(const char *oldpkgname, const char *newpkgname)
+int renamepkg(const char *oldpkgname, const char *newpkgname, PackageType package_type)
 {
     char oldpkgdir[PKG_PATH_MAX];
     char newpkgdir[PKG_PATH_MAX];
 
-    if (create_pkg_path(oldpkgdir, oldpkgname, PKG_DIR_POSTFIX, 0))
+    if (create_pkg_path(oldpkgdir, package_type, oldpkgname, PKG_DIR_POSTFIX, 0))
         return -1;
-    if (create_pkg_path(newpkgdir, newpkgname, PKG_DIR_POSTFIX, 0))
+    if (create_pkg_path(newpkgdir, package_type, newpkgname, PKG_DIR_POSTFIX, 0))
         return -1;
 
     if (rename(oldpkgdir, newpkgdir) < 0) {
@@ -140,7 +251,7 @@ int renamepkg(const char *oldpkgname, const char *newpkgname)
     return 0;
 }
 
-int fix_uid(const char *pkgname, uid_t uid, gid_t gid)
+int fix_uid(const char *pkgname, PackageType package_type, uid_t uid, gid_t gid)
 {
     char pkgdir[PKG_PATH_MAX];
     struct stat s;
@@ -151,7 +262,7 @@ int fix_uid(const char *pkgname, uid_t uid, gid_t gid)
         return -1;
     }
 
-    if (create_pkg_path(pkgdir, pkgname, PKG_DIR_POSTFIX, 0)) {
+    if (create_pkg_path(pkgdir, package_type, pkgname, PKG_DIR_POSTFIX, 0)) {
         ALOGE("cannot create package path\n");
         return -1;
     }
@@ -177,17 +288,17 @@ int fix_uid(const char *pkgname, uid_t uid, gid_t gid)
     return 0;
 }
 
-int delete_user_data(const char *pkgname, userid_t userid)
+int delete_user_data(const char *pkgname, PackageType package_type, userid_t userid)
 {
     char pkgdir[PKG_PATH_MAX];
 
-    if (create_pkg_path(pkgdir, pkgname, PKG_DIR_POSTFIX, userid))
+    if (create_pkg_path(pkgdir, package_type, pkgname, PKG_DIR_POSTFIX, userid))
         return -1;
 
     return delete_dir_contents(pkgdir, 0, NULL);
 }
 
-int make_user_data(const char *pkgname, uid_t uid, userid_t userid, const char* seinfo)
+int make_user_data(const char *pkgname, PackageType package_type, uid_t uid, userid_t userid, const char* seinfo)
 {
     char pkgdir[PKG_PATH_MAX];
     char applibdir[PKG_PATH_MAX];
@@ -195,10 +306,10 @@ int make_user_data(const char *pkgname, uid_t uid, userid_t userid, const char* 
     struct stat libStat;
 
     // Create the data dir for the package
-    if (create_pkg_path(pkgdir, pkgname, PKG_DIR_POSTFIX, userid)) {
+    if (create_pkg_path(pkgdir, package_type, pkgname, PKG_DIR_POSTFIX, userid)) {
         return -1;
     }
-    if (create_pkg_path(libsymlink, pkgname, PKG_LIB_POSTFIX, userid)) {
+    if (create_pkg_path(libsymlink, package_type, pkgname, PKG_LIB_POSTFIX, userid)) {
         ALOGE("cannot create package lib symlink origin path\n");
         return -1;
     }
@@ -278,12 +389,18 @@ int delete_user(userid_t userid)
 {
     int status = 0;
 
-    char data_path[PKG_PATH_MAX];
-    if ((create_user_path(data_path, userid) != 0)
-            || (delete_dir_contents(data_path, 1, NULL) != 0)) {
+    char private_data_path[PKG_PATH_MAX];
+    if ((create_user_path(private_data_path, PRIVATE, userid) != 0)
+            || (delete_dir_contents(private_data_path, 1, NULL) != 0)) {
         status = -1;
     }
 
+    char business_data_path[PKG_PATH_MAX];
+    if ((create_user_path(business_data_path, BUSINESS, userid) != 0)
+            || (delete_dir_contents(business_data_path, 1, NULL) != 0)) {
+        status = -1;
+    }
+    
     char media_path[PATH_MAX];
     if ((create_user_media_path(media_path, userid) != 0)
             || (delete_dir_contents(media_path, 1, NULL) != 0)) {
@@ -299,23 +416,23 @@ int delete_user(userid_t userid)
     return status;
 }
 
-int delete_cache(const char *pkgname, userid_t userid)
+int delete_cache(const char *pkgname, PackageType package_type, userid_t userid)
 {
     char cachedir[PKG_PATH_MAX];
 
-    if (create_pkg_path(cachedir, pkgname, CACHE_DIR_POSTFIX, userid))
+    if (create_pkg_path(cachedir, package_type, pkgname, CACHE_DIR_POSTFIX, userid))
         return -1;
 
     /* delete contents, not the directory, no exceptions */
     return delete_dir_contents(cachedir, 0, NULL);
 }
 
-int delete_code_cache(const char *pkgname, userid_t userid)
+int delete_code_cache(const char *pkgname, PackageType package_type, userid_t userid)
 {
     char codecachedir[PKG_PATH_MAX];
     struct stat s;
 
-    if (create_pkg_path(codecachedir, pkgname, CODE_CACHE_DIR_POSTFIX, userid))
+    if (create_pkg_path(codecachedir, package_type, pkgname, CODE_CACHE_DIR_POSTFIX, userid))
         return -1;
 
     /* it's okay if code cache is missing */
@@ -340,7 +457,9 @@ int free_cache(int64_t free_size)
     int64_t avail;
     DIR *d;
     struct dirent *de;
-    char tmpdir[PATH_MAX];
+    char tmpdir[2][PATH_MAX];
+    char tmpmediadir[PATH_MAX];
+    PackageType package_type[2] = {PRIVATE, BUSINESS};
     char *dirpos;
 
     avail = data_disk_free();
@@ -351,43 +470,46 @@ int free_cache(int64_t free_size)
 
     cache = start_cache_collection();
 
+    int i=0;
+    for (; i< 2; i++) {
     // Collect cache files for primary user.
-    if (create_user_path(tmpdir, 0) == 0) {
-        //ALOGI("adding cache files from %s\n", tmpdir);
-        add_cache_files(cache, tmpdir, "cache");
-    }
+    	if (create_user_path(tmpdir[i], package_type[i], 0) == 0) {
+        	//ALOGI("adding cache files from %s\n", tmpdir);
+        	add_cache_files(cache, tmpdir[i], "cache");
+    	}
 
-    // Search for other users and add any cache files from them.
-    snprintf(tmpdir, sizeof(tmpdir), "%s%s", android_data_dir.path,
-            SECONDARY_USER_PREFIX);
-    dirpos = tmpdir + strlen(tmpdir);
-    d = opendir(tmpdir);
-    if (d != NULL) {
-        while ((de = readdir(d))) {
-            if (de->d_type == DT_DIR) {
-                const char *name = de->d_name;
-                    /* always skip "." and ".." */
-                if (name[0] == '.') {
-                    if (name[1] == 0) continue;
-                    if ((name[1] == '.') && (name[2] == 0)) continue;
-                }
-                if ((strlen(name)+(dirpos-tmpdir)) < (sizeof(tmpdir)-1)) {
-                    strcpy(dirpos, name);
-                    //ALOGI("adding cache files from %s\n", tmpdir);
-                    add_cache_files(cache, tmpdir, "cache");
-                } else {
-                    ALOGW("Path exceeds limit: %s%s", tmpdir, name);
-                }
-            }
-        }
-        closedir(d);
+		// Search for other users and add any cache files from them (in private_data)
+	    snprintf(tmpdir[i], sizeof(tmpdir[i]), "%s%s", android_data_dir.path,
+	            SECONDARY_PRIVATE_USER_PREFIX);
+	    dirpos = tmpdir[i] + strlen(tmpdir[i]);
+	    d = opendir(tmpdir[i]);
+	    if (d != NULL) {
+	        while ((de = readdir(d))) {
+	            if (de->d_type == DT_DIR) {
+	                const char *name = de->d_name;
+	                    /* always skip "." and ".." */
+	                if (name[0] == '.') {
+	                    if (name[1] == 0) continue;
+	                    if ((name[1] == '.') && (name[2] == 0)) continue;
+	                }
+	                if ((strlen(name)+(dirpos-tmpdir[i])) < (sizeof(tmpdir[i])-1)) {
+	                    strcpy(dirpos, name);
+	                    //ALOGI("adding cache files from %s\n", tmpdir);
+	                    add_cache_files(cache, tmpdir[i], "cache");
+	                } else {
+	                    ALOGW("Path exceeds limit: %s%s", tmpdir[i], name);
+	                }
+	            }
+	        }
+	        closedir(d);
+	    }
     }
 
     // Collect cache files on external storage for all users (if it is mounted as part
     // of the internal storage).
-    strcpy(tmpdir, android_media_dir.path);
-    dirpos = tmpdir + strlen(tmpdir);
-    d = opendir(tmpdir);
+    strcpy(tmpmediadir, android_media_dir.path);
+    dirpos = tmpmediadir + strlen(tmpmediadir);
+    d = opendir(tmpmediadir);
     if (d != NULL) {
         while ((de = readdir(d))) {
             if (de->d_type == DT_DIR) {
@@ -396,15 +518,15 @@ int free_cache(int64_t free_size)
                 if (name[0] < '0' || name[0] > '9') {
                     continue;
                 }
-                if ((strlen(name)+(dirpos-tmpdir)) < (sizeof(tmpdir)-1)) {
+                if ((strlen(name)+(dirpos-tmpmediadir)) < (sizeof(tmpmediadir)-1)) {
                     strcpy(dirpos, name);
-                    if (lookup_media_dir(tmpdir, "Android") == 0
-                            && lookup_media_dir(tmpdir, "data") == 0) {
+                    if (lookup_media_dir(tmpmediadir, "Android") == 0
+                            && lookup_media_dir(tmpmediadir, "data") == 0) {
                         //ALOGI("adding cache files from %s\n", tmpdir);
-                        add_cache_files(cache, tmpdir, "cache");
+                        add_cache_files(cache, tmpmediadir, "cache");
                     }
                 } else {
-                    ALOGW("Path exceeds limit: %s%s", tmpdir, name);
+                    ALOGW("Path exceeds limit: %s%s", tmpmediadir, name);
                 }
             }
         }
@@ -465,7 +587,7 @@ int rm_dex(const char *path, const char *instruction_set)
     }
 }
 
-int get_size(const char *pkgname, userid_t userid, const char *apkpath,
+int get_size(const char *pkgname, PackageType package_type, userid_t userid, const char *apkpath,
              const char *libdirpath, const char *fwdlock_apkpath, const char *asecpath,
              const char *instruction_set, int64_t *_codesize, int64_t *_datasize,
              int64_t *_cachesize, int64_t* _asecsize)
@@ -522,7 +644,7 @@ int get_size(const char *pkgname, userid_t userid, const char *apkpath,
         }
     }
 
-    if (create_pkg_path(path, pkgname, PKG_DIR_POSTFIX, userid)) {
+    if (create_pkg_path(path, package_type, pkgname, PKG_DIR_POSTFIX, userid)) {
         goto done;
     }
 
@@ -1196,8 +1318,16 @@ int movefiles()
                             // Skip -- source package no longer exists.
                         } else {
                             ALOGV("Move file: %s (from %s to %s)\n", buf+bufp, srcpkg, dstpkg);
-                            if (!create_move_path(srcpath, srcpkg, buf+bufp, 0) &&
-                                    !create_move_path(dstpath, dstpkg, buf+bufp, 0)) {
+                            //First try to move from private_data
+                            if (!create_move_path(srcpath, srcpkg, PRIVATE, buf+bufp, 0) &&
+                                    !create_move_path(dstpath, dstpkg, PRIVATE, buf+bufp, 0)) {
+                                movefileordir(srcpath, dstpath,
+                                        strlen(dstpath)-strlen(buf+bufp),
+                                        dstuid, dstgid, &s);
+                            }
+                            //Now try to move from business_data
+                            if (!create_move_path(srcpath, srcpkg, BUSINESS, buf+bufp, 0) &&
+                                    !create_move_path(dstpath, dstpkg, BUSINESS, buf+bufp, 0)) {
                                 movefileordir(srcpath, dstpath,
                                         strlen(dstpath)-strlen(buf+bufp),
                                         dstuid, dstgid, &s);
@@ -1226,10 +1356,22 @@ int movefiles()
                                         UPDATE_COMMANDS_DIR_PREFIX, name, div);
                             }
                             if (srcpkg[0] != 0) {
-                                if (!create_pkg_path(srcpath, srcpkg, PKG_DIR_POSTFIX, 0)) {
+                            	// first look for the package in private path and
+                            	//if not found look for it in business path
+                            	PackageType package_type = PRIVATE;
+                                if (!create_pkg_path(srcpath, package_type, srcpkg, PKG_DIR_POSTFIX, 0)) {
                                     if (lstat(srcpath, &s) < 0) {
-                                        // Package no longer exists -- skip.
-                                        srcpkg[0] = 0;
+                                    	package_type = BUSINESS;
+                                    	if (!create_pkg_path(srcpath, package_type, srcpkg, PKG_DIR_POSTFIX, 0)) {
+                                    		if (lstat(srcpath, &s) < 0) {
+                                                // Package no longer exists -- skip.
+                                                srcpkg[0] = 0;
+                                    		}
+                                    	} else {
+                                            srcpkg[0] = 0;
+                                            ALOGW("Can't create path %s in %s%s\n",
+                                                    div, UPDATE_COMMANDS_DIR_PREFIX, name);
+                                        }
                                     }
                                 } else {
                                     srcpkg[0] = 0;
@@ -1237,7 +1379,7 @@ int movefiles()
                                             div, UPDATE_COMMANDS_DIR_PREFIX, name);
                                 }
                                 if (srcpkg[0] != 0) {
-                                    if (!create_pkg_path(dstpath, dstpkg, PKG_DIR_POSTFIX, 0)) {
+                                    if (!create_pkg_path(dstpath, package_type, dstpkg, PKG_DIR_POSTFIX, 0)) {
                                         if (lstat(dstpath, &s) == 0) {
                                             dstuid = s.st_uid;
                                             dstgid = s.st_gid;
@@ -1292,18 +1434,18 @@ done:
     return 0;
 }
 
-int linklib(const char* pkgname, const char* asecLibDir, int userId)
+int linklib(const char* pkgname, const char* asecLibDir, int userId, PackageType package_type)
 {
     char pkgdir[PKG_PATH_MAX];
     char libsymlink[PKG_PATH_MAX];
     struct stat s, libStat;
     int rc = 0;
 
-    if (create_pkg_path(pkgdir, pkgname, PKG_DIR_POSTFIX, userId)) {
+    if (create_pkg_path(pkgdir, package_type, pkgname, PKG_DIR_POSTFIX, userId)) {
         ALOGE("cannot create package path\n");
         return -1;
     }
-    if (create_pkg_path(libsymlink, pkgname, PKG_LIB_POSTFIX, userId)) {
+    if (create_pkg_path(libsymlink, package_type, pkgname, PKG_LIB_POSTFIX, userId)) {
         ALOGE("cannot create package lib symlink origin path\n");
         return -1;
     }
@@ -1475,7 +1617,7 @@ fail:
     return -1;
 }
 
-int restorecon_data(const char* pkgName, const char* seinfo, uid_t uid)
+int restorecon_data(const char* pkgName, PackageType package_type, const char* seinfo, uid_t uid)
 {
     struct dirent *entry;
     DIR *d;
@@ -1493,7 +1635,16 @@ int restorecon_data(const char* pkgName, const char* seinfo, uid_t uid)
         return -1;
     }
 
-    if (asprintf(&primarydir, "%s%s%s", android_data_dir.path, PRIMARY_USER_PREFIX, pkgName) < 0) {
+	 char * primary_path_prefix = NULL;
+	 char * secondary_path_prefix = NULL;
+	 if (package_type == PRIVATE) {
+	 		primary_path_prefix = PRIMARY_PRIVATE_USER_PREFIX;
+	 		secondary_path_prefix = SECONDARY_PRIVATE_USER_PREFIX;
+	 } else {
+	 		primary_path_prefix = PRIMARY_BUSINESS_USER_PREFIX;
+	 		secondary_path_prefix = SECONDARY_BUSINESS_USER_PREFIX;
+	 }
+    if (asprintf(&primarydir, "%s%s%s", android_data_dir.path, primary_path_prefix, pkgName) < 0) {
         return -1;
     }
 
@@ -1503,7 +1654,7 @@ int restorecon_data(const char* pkgName, const char* seinfo, uid_t uid)
         ret |= -1;
     }
 
-    if (asprintf(&userdir, "%s%s", android_data_dir.path, SECONDARY_USER_PREFIX) < 0) {
+    if (asprintf(&userdir, "%s%s", android_data_dir.path, secondary_path_prefix) < 0) {
         free(primarydir);
         return -1;
     }

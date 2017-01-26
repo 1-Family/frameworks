@@ -116,7 +116,7 @@ interface IPackageManager {
     String[] getAppOpPermissionPackages(String permissionName);
 
     ResolveInfo resolveIntent(in Intent intent, String resolvedType, int flags, int userId);
-
+		
     boolean canForwardTo(in Intent intent, String resolvedType, int sourceUserId, int targetUserId);
 
     List<ResolveInfo> queryIntentActivities(in Intent intent, 
@@ -343,6 +343,9 @@ interface IPackageManager {
      */
      void freeStorage(in long freeStorageSize,
              in IntentSender pi);
+	     
+     // Get the package type (BUSINESS/PRIVATE/BUSINESS_PRIVATE)
+     int getPackageType(in String packageName);
      
     /**
      * Delete all the cache files in an applications cache directory

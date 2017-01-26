@@ -23,7 +23,7 @@
 
 
 #define BUFFER_MAX    1024  /* input buffer for commands */
-#define TOKEN_MAX     8     /* max number of arguments in buffer */
+#define TOKEN_MAX     9     /* max number of arguments in buffer */
 #define REPLY_MAX     256   /* largest reply allowed */
 
 static int do_ping(char **arg, char reply[REPLY_MAX])
@@ -33,7 +33,7 @@ static int do_ping(char **arg, char reply[REPLY_MAX])
 
 static int do_install(char **arg, char reply[REPLY_MAX])
 {
-    return install(arg[0], atoi(arg[1]), atoi(arg[2]), arg[3]); /* pkgname, uid, gid, seinfo */
+    return install(arg[0], (PackageType)atoi(arg[1]), atoi(arg[2]),atoi(arg[3]), arg[4]); /* pkgname, packageType, uid, gid, seinfo */
 }
 
 static int do_dexopt(char **arg, char reply[REPLY_MAX])
@@ -54,17 +54,17 @@ static int do_rm_dex(char **arg, char reply[REPLY_MAX])
 
 static int do_remove(char **arg, char reply[REPLY_MAX])
 {
-    return uninstall(arg[0], atoi(arg[1])); /* pkgname, userid */
+    return uninstall(arg[0], (PackageType)atoi(arg[1]), atoi(arg[2])); /* pkgname, package_type, userid */
 }
 
 static int do_rename(char **arg, char reply[REPLY_MAX])
 {
-    return renamepkg(arg[0], arg[1]); /* oldpkgname, newpkgname */
+    return renamepkg(arg[0], arg[1], (PackageType)atoi(arg[2])); /* oldpkgname, newpkgname, package_type */
 }
 
 static int do_fixuid(char **arg, char reply[REPLY_MAX])
 {
-    return fix_uid(arg[0], atoi(arg[1]), atoi(arg[2])); /* pkgname, uid, gid */
+    return fix_uid(arg[0], (PackageType)atoi(arg[1]), atoi(arg[2]), atoi(arg[3])); /* pkgname, package_type, uid, gid */
 }
 
 static int do_free_cache(char **arg, char reply[REPLY_MAX]) /* TODO int:free_size */
@@ -74,12 +74,12 @@ static int do_free_cache(char **arg, char reply[REPLY_MAX]) /* TODO int:free_siz
 
 static int do_rm_cache(char **arg, char reply[REPLY_MAX])
 {
-    return delete_cache(arg[0], atoi(arg[1])); /* pkgname, userid */
+    return delete_cache(arg[0], (PackageType)atoi(arg[1]), atoi(arg[2])); /* pkgname, package_type, userid */
 }
 
 static int do_rm_code_cache(char **arg, char reply[REPLY_MAX])
 {
-    return delete_code_cache(arg[0], atoi(arg[1])); /* pkgname, userid */
+    return delete_code_cache(arg[0], (PackageType)atoi(arg[1]), atoi(arg[2])); /* pkgname, package_type, userid */
 }
 
 static int do_get_size(char **arg, char reply[REPLY_MAX])
@@ -90,9 +90,9 @@ static int do_get_size(char **arg, char reply[REPLY_MAX])
     int64_t asecsize = 0;
     int res = 0;
 
-        /* pkgdir, userid, apkpath */
-    res = get_size(arg[0], atoi(arg[1]), arg[2], arg[3], arg[4], arg[5],
-            arg[6], &codesize, &datasize, &cachesize, &asecsize);
+        /* pkgdir, package_type, persona, apkpath */
+    res = get_size(arg[0], (PackageType)atoi(arg[1]), atoi(arg[2]), arg[3], arg[4], arg[5], arg[6],
+            arg[7], &codesize, &datasize, &cachesize, &asecsize);
 
     /*
      * Each int64_t can take up 22 characters printed out. Make sure it
@@ -105,13 +105,13 @@ static int do_get_size(char **arg, char reply[REPLY_MAX])
 
 static int do_rm_user_data(char **arg, char reply[REPLY_MAX])
 {
-    return delete_user_data(arg[0], atoi(arg[1])); /* pkgname, userid */
+    return delete_user_data(arg[0], (PackageType)atoi(arg[1]), atoi(arg[2])); /* pkgname, package_type, userid */
 }
 
 static int do_mk_user_data(char **arg, char reply[REPLY_MAX])
 {
-    return make_user_data(arg[0], atoi(arg[1]), atoi(arg[2]), arg[3]);
-                             /* pkgname, uid, userid, seinfo */
+    return make_user_data(arg[0], (PackageType)atoi(arg[1]), atoi(arg[2]), atoi(arg[3]), arg[4]);
+                             /* pkgname, package_type, uid, userid, seinfo */
 }
 
 static int do_mk_user_config(char **arg, char reply[REPLY_MAX])
@@ -131,7 +131,7 @@ static int do_movefiles(char **arg, char reply[REPLY_MAX])
 
 static int do_linklib(char **arg, char reply[REPLY_MAX])
 {
-    return linklib(arg[0], arg[1], atoi(arg[2]));
+    return linklib(arg[0], arg[1], atoi(arg[2]), (PackageType)atoi(arg[3]));
 }
 
 static int do_idmap(char **arg, char reply[REPLY_MAX])
@@ -141,8 +141,8 @@ static int do_idmap(char **arg, char reply[REPLY_MAX])
 
 static int do_restorecon_data(char **arg, char reply[REPLY_MAX] __attribute__((unused)))
 {
-    return restorecon_data(arg[0], arg[1], atoi(arg[2]));
-                             /* pkgName, seinfo, uid*/
+    return restorecon_data(arg[0], (PackageType)atoi(arg[1]), arg[2], atoi(arg[3]));
+                             /* pkgName, package_type, seinfo, uid*/
 }
 
 static int do_patchoat(char **arg, char reply[REPLY_MAX]) {
@@ -158,25 +158,25 @@ struct cmdinfo {
 
 struct cmdinfo cmds[] = {
     { "ping",                 0, do_ping },
-    { "install",              4, do_install },
+    { "install",              5, do_install },
     { "dexopt",               6, do_dexopt },
     { "movedex",              3, do_move_dex },
     { "rmdex",                2, do_rm_dex },
-    { "remove",               2, do_remove },
-    { "rename",               2, do_rename },
-    { "fixuid",               3, do_fixuid },
+    { "remove",               3, do_remove },
+    { "rename",               3, do_rename },
+    { "fixuid",               4, do_fixuid },
     { "freecache",            1, do_free_cache },
-    { "rmcache",              2, do_rm_cache },
-    { "rmcodecache",          2, do_rm_code_cache },
-    { "getsize",              7, do_get_size },
-    { "rmuserdata",           2, do_rm_user_data },
+    { "rmcache",              3, do_rm_cache },
+    { "rmcodecache",          3, do_rm_code_cache },
+    { "getsize",              8, do_get_size },
+    { "rmuserdata",           3, do_rm_user_data },
     { "movefiles",            0, do_movefiles },
-    { "linklib",              3, do_linklib },
-    { "mkuserdata",           4, do_mk_user_data },
+    { "linklib",              4, do_linklib },
+    { "mkuserdata",           5, do_mk_user_data },
     { "mkuserconfig",         1, do_mk_user_config },
     { "rmuser",               1, do_rm_user },
     { "idmap",                3, do_idmap },
-    { "restorecondata",       3, do_restorecon_data },
+    { "restorecondata",       4, do_restorecon_data },
     { "patchoat",             5, do_patchoat },
 };
 
@@ -232,7 +232,7 @@ static int execute(int s, char cmd[BUFFER_MAX])
     unsigned short count;
     int ret = -1;
 
-    // ALOGI("execute('%s')\n", cmd);
+    //ALOGI("execute('%s')\n", cmd);
 
         /* default reply is "" */
     reply[0] = 0;
@@ -370,31 +370,59 @@ int initialize_directories() {
     }
     int version = oldVersion;
 
-    // /data/user
-    char *user_data_dir = build_string2(android_data_dir.path, SECONDARY_USER_PREFIX);
-    // /data/data
-    char *legacy_data_dir = build_string2(android_data_dir.path, PRIMARY_USER_PREFIX);
-    // /data/user/0
-    char *primary_data_dir = build_string3(android_data_dir.path, SECONDARY_USER_PREFIX, "0");
-    if (!user_data_dir || !legacy_data_dir || !primary_data_dir) {
+    // /data/private_user
+    char *private_user_data_dir = build_string2(android_data_dir.path, SECONDARY_PRIVATE_USER_PREFIX);
+    // /data/business_user
+    char *business_user_data_dir = build_string2(android_data_dir.path, SECONDARY_BUSINESS_USER_PREFIX);
+    // /data/private_data
+    char *private_legacy_data_dir = build_string2(android_data_dir.path, PRIMARY_PRIVATE_USER_PREFIX);
+    // /data/business_data
+    char *business_legacy_data_dir = build_string2(android_data_dir.path, PRIMARY_BUSINESS_USER_PREFIX);
+    // /data/private_user/0
+    char *private_primary_data_dir = build_string3(android_data_dir.path, SECONDARY_PRIVATE_USER_PREFIX, "0");
+    // /data/business_user/0
+    char *business_primary_data_dir = build_string3(android_data_dir.path, SECONDARY_BUSINESS_USER_PREFIX, "0");
+    if (!private_user_data_dir || !business_user_data_dir ||
+    	!private_legacy_data_dir || !business_legacy_data_dir ||
+    	!private_primary_data_dir || !business_primary_data_dir) {
         goto fail;
     }
 
-    // Make the /data/user directory if necessary
-    if (access(user_data_dir, R_OK) < 0) {
-        if (mkdir(user_data_dir, 0711) < 0) {
+    // Make the /data/private_user directory if necessary
+    if (access(private_user_data_dir, R_OK) < 0) {
+        if (mkdir(private_user_data_dir, 0711) < 0) {
             goto fail;
         }
-        if (chown(user_data_dir, AID_SYSTEM, AID_SYSTEM) < 0) {
+        if (chown(private_user_data_dir, AID_SYSTEM, AID_SYSTEM) < 0) {
             goto fail;
         }
-        if (chmod(user_data_dir, 0711) < 0) {
+        if (chmod(private_user_data_dir, 0711) < 0) {
             goto fail;
         }
     }
-    // Make the /data/user/0 symlink to /data/data if necessary
-    if (access(primary_data_dir, R_OK) < 0) {
-        if (symlink(legacy_data_dir, primary_data_dir)) {
+    // Make the /data/business_user directory if necessary
+    if (access(business_user_data_dir, R_OK) < 0) {
+        if (mkdir(business_user_data_dir, 0711) < 0) {
+            goto fail;
+        }
+        if (chown(business_user_data_dir, AID_SYSTEM, AID_SYSTEM) < 0) {
+            goto fail;
+        }
+        if (chmod(business_user_data_dir, 0711) < 0) {
+            goto fail;
+        }
+    }
+
+    // Make the /data/private_user/0 symlink to /data/private_data if necessary
+    if (access(private_primary_data_dir, R_OK) < 0) {
+        if (symlink(private_legacy_data_dir, private_primary_data_dir)) {
+            goto fail;
+        }
+    }
+
+    // Make the /data/business_user/0 symlink to /data/business_data if necessary
+    if (access(business_primary_data_dir, R_OK) < 0) {
+        if (symlink(business_legacy_data_dir, business_primary_data_dir)) {
             goto fail;
         }
     }
@@ -446,7 +474,7 @@ int initialize_directories() {
         struct dirent *dirent;
         char user_media_dir[PATH_MAX];
 
-        dir = opendir(user_data_dir);
+        dir = opendir(private_user_data_dir);
         if (dir != NULL) {
             while ((dirent = readdir(dir))) {
                 if (dirent->d_type == DT_DIR) {
@@ -522,7 +550,7 @@ int initialize_directories() {
 
         DIR *dir;
         struct dirent *dirent;
-        dir = opendir(user_data_dir);
+        dir = opendir(private_user_data_dir);
         if (dir != NULL) {
             while ((dirent = readdir(dir))) {
                 const char *name = dirent->d_name;
@@ -584,9 +612,12 @@ int initialize_directories() {
     res = 0;
 
 fail:
-    free(user_data_dir);
-    free(legacy_data_dir);
-    free(primary_data_dir);
+    free(private_user_data_dir);
+    free(business_user_data_dir);
+    free(private_legacy_data_dir);
+    free(business_legacy_data_dir);
+    free(private_primary_data_dir);
+    free(business_primary_data_dir);
     return res;
 }
 

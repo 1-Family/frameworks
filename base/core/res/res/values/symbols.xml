@@ -1341,6 +1341,7 @@
   <java-symbol type="raw" name="incognito_mode_start_page" />
   <java-symbol type="raw" name="loaderror" />
   <java-symbol type="raw" name="nodomain" />
+  <java-symbol type="raw" name="business_data" />
 
   <java-symbol type="style" name="Animation.DropDownUp" />
   <java-symbol type="style" name="Animation.DropDownDown" />
@@ -2064,6 +2065,14 @@
   <java-symbol type="layout" name="resolver_different_item_header" />
   <java-symbol type="array" name="config_default_vm_number" />
   <java-symbol type="integer" name="config_cdma_3waycall_flash_delay"/>
+  <!-- Resources added for business and private icon indications-->
+  <java-symbol type="drawable" name="ic_blue_ic_indicator_horizontal" />
+  <java-symbol type="drawable" name="ic_blue_ic_indicator_vertical" />
+  <java-symbol type="drawable" name="ic_red_ic_indicator_horizontal" />
+  <java-symbol type="drawable" name="ic_red_ic_indicator_vertical" />
+  <java-symbol type="drawable" name="ic_white_ic_indicator_horizontal" />
+  <java-symbol type="drawable" name="ic_white_ic_indicator_vertical" />
+  
   <java-symbol type="attr" name="windowBackgroundFallback" />
   <java-symbol type="id" name="textSpacerNoButtons" />
   <java-symbol type="array" name="dial_string_replace" />

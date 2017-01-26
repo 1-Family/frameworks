@@ -19,18 +19,25 @@ package com.android.internal.os;
 import android.app.ActivityManagerNative;
 import android.app.ActivityThread;
 import android.app.ApplicationErrorReport;
+import android.net.LocalServerSocket;
 import android.os.Build;
 import android.os.Debug;
 import android.os.IBinder;
 import android.os.Process;
+import android.os.ServiceManager;
 import android.os.SystemProperties;
+import android.content.pm.PackageManager.PackageType;
+import android.security.AndroidKeyStore;
 import android.util.Log;
 import android.util.Slog;
 import com.android.internal.logging.AndroidConfig;
 import com.android.server.NetworkManagementSocketTagger;
 import dalvik.system.VMRuntime;
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.util.TimeZone;
 import java.util.logging.LogManager;
 import org.apache.harmony.luni.internal.util.TimezoneGetter;
@@ -55,6 +62,11 @@ public class RuntimeInit {
     private static final native void nativeFinishInit();
     private static final native void nativeSetExitWithoutCleanup(boolean exitWithoutCleanup);
 
+    private static String mKeyAlias = "5asf6fd589fkljdsdgker45dfsncb4jkcjwejv5jk";
+    private static PublicKey mPublicKey = null;
+    private static PrivateKey mPrivateKey = null;
+    private static LocalServerSocket mServerSocket;
+    
     private static int Clog_e(String tag, String msg, Throwable tr) {
         return Log.println_native(Log.LOG_ID_CRASH, Log.ERROR, tag,
                 msg + '\n' + Log.getStackTraceString(tr));
@@ -96,6 +108,7 @@ public class RuntimeInit {
                 }
             } finally {
                 // Try everything to make sure this process goes away.
+            	closeServerSocket();
                 Process.killProcess(Process.myPid());
                 System.exit(10);
             }
@@ -264,7 +277,7 @@ public class RuntimeInit {
      * @param targetSdkVersion target SDK version
      * @param argv arg strings
      */
-    public static final void zygoteInit(int targetSdkVersion, String[] argv, ClassLoader classLoader)
+    public static final void zygoteInit(int targetSdkVersion, String nickName,int packageType, String[] argv, ClassLoader classLoader)
             throws ZygoteInit.MethodAndArgsCaller {
         if (DEBUG) Slog.d(TAG, "RuntimeInit: Starting application from zygote");
 
@@ -272,7 +285,7 @@ public class RuntimeInit {
 
         commonInit();
         nativeZygoteInit();
-
+        encryptionServerInit(nickName, packageType);
         applicationInit(targetSdkVersion, argv, classLoader);
     }
 
@@ -294,6 +307,76 @@ public class RuntimeInit {
         applicationInit(targetSdkVersion, argv, null);
     }
 
+    private static void initServerSocket() throws IOException {
+    	String address = String.format("encrypt_%d_%d", Process.myUid(), Process.myPid());
+    	Log.d(TAG,"Starting socket");
+		mServerSocket = new LocalServerSocket(address);    	
+    }
+    private static void runSelectLoop() {
+        try {
+	        while (true) {
+	        	EcryptFSConnection newPeer = acceptCommandPeer();
+	        	boolean done = true;
+	        	if (newPeer.hasPermissions()) {
+	        		done = newPeer.doWork(mPrivateKey,mPublicKey);
+	        	}
+                if (done) {
+                	newPeer.closeSocket();
+                }
+	        }			
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+    }
+    
+	/**
+     * Creates a public and private key and stores it using the Android Key Store, so that only
+     * this application will be able to access the keys.
+     */
+    private static int initKey(String nickName) {
+ 
+    	int rc = 0;
+    	try {
+    		AndroidKeyStore ks = new AndroidKeyStore();
+    		ks.engineLoad(null);
+    		if ("system_server".equals(nickName)) {
+        		ks.Unlock();
+    			ks.CreatePrivateKey(mKeyAlias);
+    		}
+    		mPrivateKey = (PrivateKey)ks.engineGetKey(mKeyAlias, null);
+    		mPublicKey = ks.engineGetPublicKey(mKeyAlias);
+            
+    		if (mPrivateKey == null || mPublicKey == null) {
+    			throw new Exception("keys are null");
+    		}    		
+		} catch (Exception e) {
+			e.printStackTrace();
+			Log.e(TAG,String.format("Failed to retrieve key, exception:%s", e.getMessage()));
+			rc = -1;
+		}
+    	return rc;
+    }
+    
+    private static void encryptionServerInit(final String nickName, final int packageType) {
+    	try {
+		    if (!(Process.myUid() >= Process.FIRST_ISOLATED_UID && Process.myUid() <= Process.LAST_ISOLATED_UID) 
+		    		&& ("system_server".equals(nickName) || packageType != PackageType.PRIVATE.ordinal())) {
+		    	if (initKey(nickName) == -1) {
+					throw new RuntimeException("Failure initializing keys");
+		    	}
+		    	initServerSocket();
+				new Thread(new Runnable() {
+				    public void run() {
+				    	runSelectLoop();
+				    }
+				  }).start();
+	    	} else {
+	    		Log.d(TAG, String.format("%s Not a business package", nickName));
+	    	}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+    }
     private static void applicationInit(int targetSdkVersion, String[] argv, ClassLoader classLoader)
             throws ZygoteInit.MethodAndArgsCaller {
         // If the application calls System.exit(), terminate the process
@@ -420,6 +503,34 @@ public class RuntimeInit {
             startClass = args[curArg++];
             startArgs = new String[args.length - curArg];
             System.arraycopy(args, curArg, startArgs, 0, startArgs.length);
+        }
+    }
+    
+    /**
+     * Close and clean up sockets. Called on shutdown and on the
+     * child's exit path.
+     */
+    private static void closeServerSocket() {
+        try {
+            if (mServerSocket != null) {
+                mServerSocket.close();
+            }
+        } catch (IOException ex) {
+            Log.e(TAG, "Error closing sockets", ex);
+        }
+
+        mServerSocket = null;
+    }
+    
+    /**
+     * Waits for and accepts a single command connection. Throws
+     * RuntimeException on failure.
+     */
+    private static EcryptFSConnection acceptCommandPeer() {
+        try {
+            return new EcryptFSConnection(mServerSocket.accept());
+        } catch (IOException ex) {
+            throw new RuntimeException("IOException during accept()", ex);
         }
     }
 }

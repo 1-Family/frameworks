@@ -155,6 +155,7 @@ public class ResolverActivity extends Activity implements AdapterView.OnItemClic
     private Intent makeMyIntent() {
         Intent intent = new Intent(getIntent());
         intent.setComponent(null);
+		
         // The resolver activity is set to be hidden from recent tasks.
         // we don't want this attribute to be propagated to the next activity
         // being launched.  Note that if the original Intent also had this
@@ -218,7 +219,8 @@ public class ResolverActivity extends Activity implements AdapterView.OnItemClic
         final ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
         mIconDpi = am.getLauncherLargeIconDensity();
         mIconSize = am.getLauncherLargeIconSize();
-
+        //Log.d(TAG,"The calling package in ResolverActivity is " + mPm.getPackagesForUid(mLaunchedFromUid)[0]);
+        intent.setOriginPackage(mPm.getPackagesForUid(mLaunchedFromUid)[0]);
         mAdapter = new ResolveListAdapter(this, intent, initialIntents, rList,
                 mLaunchedFromUid, alwaysUseOption);
 
@@ -312,6 +314,10 @@ public class ResolverActivity extends Activity implements AdapterView.OnItemClic
             setAlwaysButtonEnabled(true, mAdapter.getFilteredPosition(), false);
             mOnceButton.setEnabled(true);
         }
+		
+		if (DEBUG) {
+			Log.i(TAG, "Package name here=" + getPackageName());
+		}
     }
 
     /**
@@ -737,6 +743,9 @@ public class ResolverActivity extends Activity implements AdapterView.OnItemClic
         }
 
         private void rebuildList() {
+			if (DEBUG) {
+				Log.i(TAG, "rebuildList - Starting");
+			}
             List<ResolveInfo> currentResolveList;
 
             try {

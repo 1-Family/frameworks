@@ -30,6 +30,7 @@ import android.app.IUiAutomationConnection;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager.PackageType;
 import android.content.res.CompatibilityInfo;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -58,6 +59,7 @@ final class ProcessRecord {
     final ArrayMap<String, ProcessStats.ProcessStateHolder> pkgList
             = new ArrayMap<String, ProcessStats.ProcessStateHolder>();
     ArraySet<String> pkgDeps;   // additional packages we have a dependency on
+    final PackageType pkgSecurityType;
     IApplicationThread thread;  // the actual proc...  may be null only if
                                 // 'persistent' is true (in which case we
                                 // are in the process of launching the app)
@@ -383,6 +385,7 @@ final class ProcessRecord {
         userId = UserHandle.getUserId(_uid);
         processName = _processName;
         pkgList.put(_info.packageName, new ProcessStats.ProcessStateHolder(_info.versionCode));
+        pkgSecurityType = _info.packageSecurityType;
         maxAdj = ProcessList.UNKNOWN_ADJ;
         curRawAdj = setRawAdj = -100;
         curAdj = setAdj = -100;

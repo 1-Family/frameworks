@@ -144,7 +144,8 @@ public class UserManagerService extends IUserManager.Stub {
 
     private final File mUsersDir;
     private final File mUserListFile;
-    private final File mBaseUserPath;
+    private final File mBasePrivateUserPath;
+    private final File mBaseBusinessUserPath;
 
     private final SparseArray<UserInfo> mUsers = new SparseArray<UserInfo>();
     private final SparseArray<Bundle> mUserRestrictions = new SparseArray<Bundle>();
@@ -184,8 +185,8 @@ public class UserManagerService extends IUserManager.Stub {
     /**
      * Available for testing purposes.
      */
-    UserManagerService(File dataDir, File baseUserPath) {
-        this(null, null, new Object(), new Object(), dataDir, baseUserPath);
+    UserManagerService(File dataDir, File basePrivateUserPath, File baseBusinessUserPath) {
+        this(null, null, new Object(), new Object(), dataDir, basePrivateUserPath, baseBusinessUserPath);
     }
 
     /**
@@ -197,7 +198,8 @@ public class UserManagerService extends IUserManager.Stub {
             Object installLock, Object packagesLock) {
         this(context, pm, installLock, packagesLock,
                 Environment.getDataDirectory(),
-                new File(Environment.getDataDirectory(), "user"));
+                Environment.getPrivateUserDirectory(),
+                Environment.getBusinessUserDirectory());
     }
 
     /**
@@ -205,7 +207,7 @@ public class UserManagerService extends IUserManager.Stub {
      */
     private UserManagerService(Context context, PackageManagerService pm,
             Object installLock, Object packagesLock,
-            File dataDir, File baseUserPath) {
+            File dataDir, File basePrivateUserPath, File baseBusinessUserPath) {
         mContext = context;
         mPm = pm;
         mInstallLock = installLock;
@@ -218,7 +220,8 @@ public class UserManagerService extends IUserManager.Stub {
                 // Make zeroth user directory, for services to migrate their files to that location
                 File userZeroDir = new File(mUsersDir, "0");
                 userZeroDir.mkdirs();
-                mBaseUserPath = baseUserPath;
+                mBasePrivateUserPath = basePrivateUserPath;
+                mBaseBusinessUserPath = baseBusinessUserPath;
                 FileUtils.setPermissions(mUsersDir.toString(),
                         FileUtils.S_IRWXU|FileUtils.S_IRWXG
                         |FileUtils.S_IROTH|FileUtils.S_IXOTH,
@@ -1169,7 +1172,8 @@ public class UserManagerService extends IUserManager.Stub {
                     }
                     int userId = getNextAvailableIdLocked();
                     userInfo = new UserInfo(userId, name, null, flags);
-                    File userPath = new File(mBaseUserPath, Integer.toString(userId));
+                    File privateUserPath = new File(mBasePrivateUserPath, Integer.toString(userId));
+                    File businessUserPath = new File(mBaseBusinessUserPath, Integer.toString(userId));
                     userInfo.serialNumber = mNextSerialNumber++;
                     long now = System.currentTimeMillis();
                     userInfo.creationTime = (now > EPOCH_PLUS_30_YEARS) ? now : 0;
@@ -1185,7 +1189,7 @@ public class UserManagerService extends IUserManager.Stub {
                         userInfo.profileGroupId = parent.profileGroupId;
                     }
                     writeUserLocked(userInfo);
-                    mPm.createNewUserLILPw(userId, userPath);
+                    mPm.createNewUserLILPw(userId, privateUserPath, businessUserPath);
                     userInfo.partial = false;
                     writeUserLocked(userInfo);
                     updateUserIdsLocked();

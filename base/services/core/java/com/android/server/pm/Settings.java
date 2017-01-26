@@ -63,6 +63,7 @@ import android.content.pm.Signature;
 import android.content.pm.UserInfo;
 import android.content.pm.PackageUserState;
 import android.content.pm.VerifierDeviceIdentity;
+import android.content.pm.PackageManager.PackageType;
 import android.util.Log;
 import android.util.Slog;
 import android.util.SparseArray;
@@ -281,11 +282,11 @@ final class Settings {
     PackageSetting getPackageLPw(PackageParser.Package pkg, PackageSetting origPackage,
             String realName, SharedUserSetting sharedUser, File codePath, File resourcePath,
             String legacyNativeLibraryPathString, String primaryCpuAbi, String secondaryCpuAbi,
-            int pkgFlags, UserHandle user, boolean add) {
+            int pkgFlags, UserHandle user, boolean add, int userType) {
         final String name = pkg.packageName;
         PackageSetting p = getPackageLPw(name, origPackage, realName, sharedUser, codePath,
                 resourcePath, legacyNativeLibraryPathString, primaryCpuAbi, secondaryCpuAbi,
-                pkg.mVersionCode, pkgFlags, user, add, true /* allowInstall */);
+                pkg.mVersionCode, pkgFlags, user, add, true /* allowInstall */, userType);
         return p;
     }
 
@@ -312,13 +313,18 @@ final class Settings {
 
     SharedUserSetting getSharedUserLPw(String name,
             int pkgFlags, boolean create) {
+    	int dummy = 4; //setting it to an illegal value for userType because it should not be used, if we get an error because of this, we know we have a bug
+    	return getSharedUserLPw(name, pkgFlags, create, dummy);
+    }
+    SharedUserSetting getSharedUserLPw(String name,
+            int pkgFlags, boolean create, int userType) {
         SharedUserSetting s = mSharedUsers.get(name);
         if (s == null) {
             if (!create) {
                 return null;
             }
             s = new SharedUserSetting(name, pkgFlags);
-            s.userId = newUserIdLPw(s);
+            s.userId = newUserIdLPw(s, userType);
             Log.i(PackageManagerService.TAG, "New shared user " + name + ": id=" + s.userId);
             // < 0 means we couldn't assign a userid; fall out and return
             // s, which is currently null
@@ -471,6 +477,15 @@ final class Settings {
             String legacyNativeLibraryPathString, String primaryCpuAbiString, String secondaryCpuAbiString,
             int vc, int pkgFlags, UserHandle installUser, boolean add,
             boolean allowInstall) {
+    	int dummy = 4; //setting it to an illegal value for userType because it should not be used, if we get an error because of this, we know we have a bug
+    	return getPackageLPw(name, origPackage, realName, sharedUser, codePath, resourcePath, 
+    						legacyNativeLibraryPathString, primaryCpuAbiString, secondaryCpuAbiString, vc, pkgFlags, installUser, add, allowInstall, dummy);
+    }
+    private PackageSetting getPackageLPw(String name, PackageSetting origPackage,
+            String realName, SharedUserSetting sharedUser, File codePath, File resourcePath,
+            String legacyNativeLibraryPathString, String primaryCpuAbiString, String secondaryCpuAbiString,
+            int vc, int pkgFlags, UserHandle installUser, boolean add,
+            boolean allowInstall, int userType) {
         PackageSetting p = mPackages.get(name);
         UserManagerService userManager = UserManagerService.getInstance();
         if (p != null) {
@@ -606,7 +621,7 @@ final class Settings {
                         addUserIdLPw(p.appId, p, name);
                     } else {
                         // Assign new user id
-                        p.appId = newUserIdLPw(p);
+                        p.appId = newUserIdLPw(p, userType);
                     }
                 }
             }
@@ -3052,11 +3067,13 @@ final class Settings {
         }
     }
 
-    void createNewUserLILPw(PackageManagerService service, Installer installer,
-            int userHandle, File path) {
-        path.mkdir();
-        FileUtils.setPermissions(path.toString(), FileUtils.S_IRWXU | FileUtils.S_IRWXG
+    void createNewUserLILPw(PackageManagerService service, Installer installer, int userHandle, File privatePath, File businessPath) {
+        privatePath.mkdir();
+        FileUtils.setPermissions(privatePath.toString(), FileUtils.S_IRWXU | FileUtils.S_IRWXG
                 | FileUtils.S_IXOTH, -1, -1);
+        businessPath.mkdir();
+        FileUtils.setPermissions(businessPath.toString(), FileUtils.S_IRWXU | FileUtils.S_IRWXG
+                | FileUtils.S_IXOTH, -1, -1);        
         for (PackageSetting ps : mPackages.values()) {
             if (ps.pkg == null || ps.pkg.applicationInfo == null) {
                 continue;
@@ -3065,6 +3082,7 @@ final class Settings {
             ps.setInstalled((ps.pkgFlags&ApplicationInfo.FLAG_SYSTEM) != 0, userHandle);
             // Need to create a data directory for all apps under this user.
             installer.createUserData(ps.name,
+            		PackageManager.getPackageType(ps.name), 
                     UserHandle.getUid(userHandle, ps.appId), userHandle,
                     ps.pkg.applicationInfo.seinfo);
         }
@@ -3121,11 +3139,19 @@ final class Settings {
     }
 
     // Returns -1 if we could not find an available UserId to assign
-    private int newUserIdLPw(Object obj) {
+    private int newUserIdLPw(Object obj, int userType) {
+    	if (userType > 2 || userType < 0) {
+    		Log.e(TAG, "Given PackageType must be between 0-2");
+    		return -1;
+    	}
         // Let's be stupidly inefficient for now...
         final int N = mUserIds.size();
+        // Use this in case we want to separate uids types according to application type
+        //int N = mUserIds.size();
         for (int i = mFirstAvailableUid; i < N; i++) {
             if (mUserIds.get(i) == null) {
+            // Use this in case we wan to separate uids types according to application type
+            //if ((((Process.FIRST_APPLICATION_UID + i) % 3) == userType) && mUserIds.get(i) == null) {
                 mUserIds.set(i, obj);
                 return Process.FIRST_APPLICATION_UID + i;
             }
@@ -3136,7 +3162,15 @@ final class Settings {
             return -1;
         }
 
+        // Use this in case we wan to separate uids types according to application type        
+//        while((((Process.FIRST_APPLICATION_UID + N) % 3) != userType)) {
+//        	mUserIds.add(N,null);
+//            N++;
+//        }
+        
         mUserIds.add(obj);
+        // Use this in case we wan to separate uids types according to application type
+        //mUserIds.add(N,obj);
         return Process.FIRST_APPLICATION_UID + N;
     }
 

@@ -19,6 +19,7 @@ package android.graphics;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.os.Trace;
+import android.graphics.Paint.Style;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.TypedValue;
@@ -482,7 +483,9 @@ public class BitmapFactory {
             throw new IllegalArgumentException("Problem decoding into existing bitmap");
         }
 
-        return bm;
+        //return bm;
+        //This function will return the bitmap with a frame in case it is an icon otherwise just the bitmap as is
+        return res.getBitmapWithIndicators(bm,id);
     }
 
     /**

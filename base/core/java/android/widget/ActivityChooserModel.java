@@ -21,7 +21,11 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageItemInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.PackageManager.NameNotFoundException;
+import android.content.pm.PackageManager.PackageType;
 import android.content.pm.ResolveInfo;
 import android.database.DataSetObservable;
 import android.os.AsyncTask;
@@ -706,12 +710,48 @@ public class ActivityChooserModel extends DataSetObservable {
         if (mReloadActivities && mIntent != null) {
             mReloadActivities = false;
             mActivities.clear();
+            mIntent.setOriginPackage(mContext.getPackageName());
             List<ResolveInfo> resolveInfos = mContext.getPackageManager()
                     .queryIntentActivities(mIntent, 0);
+            
+            /*String intentSenderPackageName = mContext.getPackageName();
+            Log.i(LOG_TAG, "The sender package name is " + intentSenderPackageName);
+            PackageInfo intentSenderPI = null;
+            PackageType intentSenderPackageType = null;
+            try {
+				intentSenderPI = mContext.getPackageManager().getPackageInfo(intentSenderPackageName, PackageManager.GET_ACTIVITIES);
+				intentSenderPackageType = intentSenderPI == null? null : intentSenderPI.applicationInfo.packageSecurityType;
+				if (intentSenderPackageType != null) {
+					Log.i(LOG_TAG, "The sender type is " + intentSenderPackageType);
+				}
+			} catch (NameNotFoundException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}*/
             final int resolveInfoCount = resolveInfos.size();
             for (int i = 0; i < resolveInfoCount; i++) {
                 ResolveInfo resolveInfo = resolveInfos.get(i);
                 ActivityInfo activityInfo = resolveInfo.activityInfo;
+//            	if (intentSenderPackageType != null) {
+//                    PackageInfo currPI = null;
+//                    PackageType currPackageType = null;
+//                    try {
+//                    	Log.i(LOG_TAG, "The current package is " + resolveInfo.activityInfo.packageName);
+//                    	currPI = mContext.getPackageManager().getPackageInfo(resolveInfo.activityInfo.packageName, PackageManager.GET_ACTIVITIES);
+//                    	currPackageType = currPI == null? null : currPI.applicationInfo.packageSecurityType;
+//                    	if (currPackageType != null) {
+//                    		Log.i(LOG_TAG, "The current type is " + currPackageType);
+//                    	}
+//                    	if (currPackageType != null && currPackageType != intentSenderPackageType && currPackageType != PackageManager.PackageType.BUSINESS_PRIVATE) {
+//                        //if (currPackageSecurityType != null && senderPackageType != currPackageSecurityType && currPackageSecurityType != PackageManager.PackageType.BUSINESS_PRIVATE)
+//                    		Log.i(LOG_TAG, "Skipping package " + currPackageType);
+//                    		continue;
+//                    	}
+//        			} catch (NameNotFoundException e) {
+//        				// TODO Auto-generated catch block
+//        				e.printStackTrace();
+//        			}            		
+//            	}
                 if (ActivityManager.checkComponentPermission(activityInfo.permission,
                         android.os.Process.myUid(), activityInfo.applicationInfo.uid,
                         activityInfo.exported) == PackageManager.PERMISSION_GRANTED) {

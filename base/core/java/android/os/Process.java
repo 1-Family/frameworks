@@ -16,6 +16,7 @@
 
 package android.os;
 
+import android.content.pm.PackageManager.PackageType;
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
 import android.system.Os;
@@ -479,6 +480,7 @@ public class Process {
      */
     public static final ProcessStartResult start(final String processClass,
                                   final String niceName,
+                                  final PackageType packageType,
                                   int uid, int gid, int[] gids,
                                   int debugFlags, int mountExternal,
                                   int targetSdkVersion,
@@ -488,7 +490,7 @@ public class Process {
                                   String appDataDir,
                                   String[] zygoteArgs) {
         try {
-            return startViaZygote(processClass, niceName, uid, gid, gids,
+            return startViaZygote(processClass, niceName, packageType, uid, gid, gids,
                     debugFlags, mountExternal, targetSdkVersion, seInfo,
                     abi, instructionSet, appDataDir, zygoteArgs);
         } catch (ZygoteStartFailedEx ex) {
@@ -601,6 +603,7 @@ public class Process {
      */
     private static ProcessStartResult startViaZygote(final String processClass,
                                   final String niceName,
+                                  final PackageType packageType,
                                   final int uid, final int gid,
                                   final int[] gids,
                                   int debugFlags, int mountExternal,
@@ -619,6 +622,7 @@ public class Process {
             argsForZygote.add("--runtime-init");
             argsForZygote.add("--setuid=" + uid);
             argsForZygote.add("--setgid=" + gid);
+            argsForZygote.add("--setpackagetype=" + packageType.ordinal());
             if ((debugFlags & Zygote.DEBUG_ENABLE_JNI_LOGGING) != 0) {
                 argsForZygote.add("--enable-jni-logging");
             }

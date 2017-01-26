@@ -16,6 +16,9 @@
 
 package com.android.internal.app;
 
+import android.app.ActivityManager;
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Parcelable;
@@ -34,7 +37,9 @@ public class ChooserActivity extends ResolverActivity {
             super.onCreate(null);
             return;
         }
+
         Intent target = (Intent)targetParcelable;
+        target.setOriginPackage(getCallingPackage());	
         if (target != null) {
             modifyTargetIntent(target);
         }

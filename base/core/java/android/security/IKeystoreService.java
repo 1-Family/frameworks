@@ -462,13 +462,14 @@ public interface IKeystoreService extends IInterface {
             }
 
             @Override
-            public int clear_uid(long uid) throws RemoteException {
+            public int clear_uid(long uid, boolean is_special_keys) throws RemoteException {
                 Parcel _data = Parcel.obtain();
                 Parcel _reply = Parcel.obtain();
                 int _result;
                 try {
                     _data.writeInterfaceToken(DESCRIPTOR);
                     _data.writeLong(uid);
+                    _data.writeInt(is_special_keys ? 1 : 0);
                     mRemote.transact(Stub.TRANSACTION_clear_uid, _data, _reply, 0);
                     _reply.readException();
                     _result = _reply.readInt();
@@ -652,7 +653,7 @@ public interface IKeystoreService extends IInterface {
 
     public int is_hardware_backed(String string) throws RemoteException;
 
-    public int clear_uid(long uid) throws RemoteException;
+    public int clear_uid(long uid, boolean include_special_keys) throws RemoteException;
 
     public int reset_uid(int uid) throws RemoteException;
 

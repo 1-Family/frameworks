@@ -1,0 +1,54 @@
+<data>
+	<business>
+		<packages>
+			<packagename name="com.android.email"/>
+			<packagename name="com.skype.raider"/>
+			<packagename name="com.google.android.talk"/>
+			<packagename name="com.google.android.apps.docs"/>
+			<!-- <packagename name="com.example.subproctester"/>
+			<packagename name="com.example.appshare1"/>
+			<packagename name="com.example.appshare2"/>
+			<packagename name="com.example.sockettester1"/>
+			<packagename name="com.javacodegeeks.android.broadcastreceiverstest"/>
+			<packagename name="com.example.localbound"/>
+			<packagename name="com.example.serviceexample"/>
+			<packagename name="com.appsolut.example.aidlDisplayRemoteMessage"/>
+			<packagename name="com.appsolut.example.aidlMessageServiceUsingParcelable"/>-->
+			<packagename name="com.android.gallery3d"/>
+			<packagename name="com.meltingsource.DocsViewer"/>
+			<packagename name="com.spotlightsix.timeclock3"/>
+		</packages>
+		<accounts>
+			<contacts_account name="helixostest@gmail.com" type="com.google"/>
+		</accounts>
+	</business>
+	<business_private>
+		<packages>
+			<packagename name="com.koushikdutta.superuser"/>
+			<packagename name="com.android.mms"/>
+			<packagename name="com.android.settings"/>
+			<packagename name="com.android.calendar"/>
+			<packagename name="com.android.providers.calendar"/>
+			<packagename name="com.google.android.calendar"/>
+			<packagename name="com.google.android.gm"/>
+			<packagename name="com.google.android.syncadapters.calendar"/>
+			<packagename name="com.android.contacts"/>
+			<packagename name="com.android.bluetooth"/>
+			<packagename name="com.socialnmobile.dictapps.notepad.color.note"/>
+			<packagename name="com.google.android.apps.googlevoice"/>
+			<packagename name="com.android.phone"/>
+			<packagename name="com.android.mms.service"/>
+			<packagename name="com.android.server.telecom"/>			
+			<packagename name="com.android.providers.telephony"/>
+			<packagename name="com.zagoggles.smssync"/>
+ 			<packagename name="com.android.inputdevices"/>
+ 			<packagename name="com.android.keychain"/>
+ 			<packagename name="com.android.location.fused"/>
+			<packagename name="com.android.providers.settings"/>
+ 			<packagename name="com.tmobile.themechooser"/>
+ 			<packagename name="com.android.stk"/>
+ 			<packagename name="com.android.camera2"/>
+ 			<packagename name="com.google.android.GoogleCamera"/>
+		</packages>
+	</business_private>
+</data>

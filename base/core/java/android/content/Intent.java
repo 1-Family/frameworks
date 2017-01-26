@@ -3872,6 +3872,7 @@ public class Intent implements Parcelable, Cloneable {
     private Uri mData;
     private String mType;
     private String mPackage;
+    private String mOriginPackage;    
     private ComponentName mComponent;
     private int mFlags;
     private ArraySet<String> mCategories;
@@ -3897,6 +3898,7 @@ public class Intent implements Parcelable, Cloneable {
         this.mData = o.mData;
         this.mType = o.mType;
         this.mPackage = o.mPackage;
+        this.mOriginPackage = o.mOriginPackage;
         this.mComponent = o.mComponent;
         this.mFlags = o.mFlags;
         this.mContentUserHint = o.mContentUserHint;
@@ -3927,6 +3929,7 @@ public class Intent implements Parcelable, Cloneable {
         this.mData = o.mData;
         this.mType = o.mType;
         this.mPackage = o.mPackage;
+        this.mOriginPackage = o.mOriginPackage;
         this.mComponent = o.mComponent;
         if (o.mCategories != null) {
             this.mCategories = new ArraySet<String>(o.mCategories);
@@ -4201,6 +4204,11 @@ public class Intent implements Parcelable, Cloneable {
                     intent.mPackage = value;
                 }
 
+                // origin package
+                else if (uri.startsWith("originPackage=", i)) {
+                    intent.mOriginPackage = value;
+                }
+                
                 // component
                 else if (uri.startsWith("component=", i)) {
                     intent.mComponent = ComponentName.unflattenFromString(value);
@@ -5169,6 +5177,19 @@ public class Intent implements Parcelable, Cloneable {
         return mPackage;
     }
 
+    /**
+     * Retrieve the application original package name which created this Intent.
+     *
+     * @return The name of the original package which created the Intent.
+     *
+     * @see #resolveActivity
+     * @see #setPackage
+     * @hide
+     */
+    public String getOriginPackage() {
+        return mOriginPackage;
+    }
+    
     /**
      * Retrieve the concrete component associated with the intent.  When receiving
      * an intent, this is the component that was found to best handle it (that is,
@@ -6476,6 +6497,24 @@ public class Intent implements Parcelable, Cloneable {
     }
 
     /**
+     * (Usually optional) Set an explicit original package name that...
+     *
+     * @param packageName The name of the application package to handle the
+     * intent, or null to allow any application package.
+     *
+     * @return Returns the same Intent object, for chaining multiple calls
+     * into a single statement.
+     *
+     * @see #getPackage
+     * @see #resolveActivity
+     * @hide
+     */
+    public Intent setOriginPackage(String packageName) {
+        mOriginPackage = packageName;
+        return this;
+    }
+    
+    /**
      * (Usually optional) Explicitly set the component to handle the intent.
      * If left with the default value of null, the system will determine the
      * appropriate class to use based on the other fields (action, data,
@@ -6728,6 +6767,10 @@ public class Intent implements Parcelable, Cloneable {
                 changes |= FILL_IN_SELECTOR;
             }
         }
+        if (other.mOriginPackage != null && (mOriginPackage == null || (flags&FILL_IN_PACKAGE) != 0)) {
+                mOriginPackage = other.mOriginPackage;
+                changes |= FILL_IN_PACKAGE;
+        }        
         if (other.mClipData != null
                 && (mClipData == null || (flags&FILL_IN_CLIP_DATA) != 0)) {
             mClipData = other.mClipData;
@@ -6834,6 +6877,7 @@ public class Intent implements Parcelable, Cloneable {
         if (!Objects.equals(this.mData, other.mData)) return false;
         if (!Objects.equals(this.mType, other.mType)) return false;
         if (!Objects.equals(this.mPackage, other.mPackage)) return false;
+		if (!Objects.equals(this.mOriginPackage, other.mOriginPackage)) return false;
         if (!Objects.equals(this.mComponent, other.mComponent)) return false;
         if (!Objects.equals(this.mCategories, other.mCategories)) return false;
 
@@ -6862,6 +6906,9 @@ public class Intent implements Parcelable, Cloneable {
         if (mPackage != null) {
             code += mPackage.hashCode();
         }
+        if (mOriginPackage != null) {
+            code += mOriginPackage.hashCode();
+        }        
         if (mComponent != null) {
             code += mComponent.hashCode();
         }
@@ -6964,6 +7011,13 @@ public class Intent implements Parcelable, Cloneable {
             first = false;
             b.append("pkg=").append(mPackage);
         }
+        if (mOriginPackage != null) {
+            if (!first) {
+                b.append(' ');
+            }
+            first = false;
+            b.append("opkg=").append(mOriginPackage);
+        }        
         if (comp && mComponent != null) {
             if (!first) {
                 b.append(' ');
@@ -7105,6 +7159,9 @@ public class Intent implements Parcelable, Cloneable {
         if (mPackage != null) {
             uri.append("package=").append(Uri.encode(mPackage)).append(';');
         }
+        if (mOriginPackage != null) {
+            uri.append("originPackage=").append(Uri.encode(mOriginPackage)).append(';');
+        }        
         if (mComponent != null) {
             uri.append("component=").append(Uri.encode(
                     mComponent.flattenToShortString(), "/")).append(';');
@@ -7151,6 +7208,7 @@ public class Intent implements Parcelable, Cloneable {
         out.writeString(mType);
         out.writeInt(mFlags);
         out.writeString(mPackage);
+        out.writeString(mOriginPackage);
         ComponentName.writeToParcel(mComponent, out);
 
         if (mSourceBounds != null) {
@@ -7208,6 +7266,7 @@ public class Intent implements Parcelable, Cloneable {
         mType = in.readString();
         mFlags = in.readInt();
         mPackage = in.readString();
+        mOriginPackage = in.readString();
         mComponent = ComponentName.readFromParcel(in);
 
         if (in.readInt() != 0) {

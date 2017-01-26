@@ -105,6 +105,11 @@ final class ApplicationPackageManager extends PackageManager {
         try {
             PackageInfo pi = mPM.getPackageInfo(packageName, flags, mContext.getUserId());
             if (pi != null) {
+                // try {
+                	// Log.d(TAG, "The package type is " + pi.applicationInfo.packageSecurityType);
+                // }catch(Exception e) {
+                	// Log.i(TAG, e == null ? "e is null" : e.getMessage());
+                // }    
                 return pi;
             }
         } catch (RemoteException e) {
@@ -552,32 +557,31 @@ final class ApplicationPackageManager extends PackageManager {
     }
 
     @Override
-    public List<ResolveInfo> queryIntentActivities(Intent intent,
-                                                   int flags) {
-        return queryIntentActivitiesAsUser(intent, flags, mContext.getUserId());
+    public List<ResolveInfo> queryIntentActivities(Intent intent, int flags) {
+    		return queryIntentActivitiesAsUser(intent, flags, mContext.getUserId());
     }
-
+    
     /** @hide Same as above but for a specific user */
     @Override
     public List<ResolveInfo> queryIntentActivitiesAsUser(Intent intent,
                                                    int flags, int userId) {
-        try {
-            return mPM.queryIntentActivities(
-                intent,
-                intent.resolveTypeIfNeeded(mContext.getContentResolver()),
-                flags,
-                userId);
-        } catch (RemoteException e) {
-            throw new RuntimeException("Package manager has died", e);
-        }
-    }
+		try {
+			return mPM.queryIntentActivities(
+			intent,
+			intent.resolveTypeIfNeeded(mContext.getContentResolver()),
+			flags,
+			userId);
+		} catch (RemoteException e) {
+			throw new RuntimeException("Package manager has died", e);
+		}
+	}
 
     @Override
     public List<ResolveInfo> queryIntentActivityOptions(
         ComponentName caller, Intent[] specifics, Intent intent,
         int flags) {
         final ContentResolver resolver = mContext.getContentResolver();
-
+        //Log.d(TAG, "In queryIntentActivityOptions");
         String[] specificTypes = null;
         if (specifics != null) {
             final int N = specifics.length;
@@ -930,7 +934,7 @@ final class ApplicationPackageManager extends PackageManager {
                 sameUid ? app.sourceDir : app.publicSourceDir,
                 sameUid ? app.splitSourceDirs : app.splitPublicSourceDirs,
                 app.resourceDirs, app.sharedLibraryFiles, Display.DEFAULT_DISPLAY,
-                null, mContext.mPackageInfo);
+                null, mContext.mPackageInfo, app.packageName);
         if (r != null) {
             return r;
         }

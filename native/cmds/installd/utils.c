@@ -56,6 +56,7 @@ int create_pkg_path_in_dir(char path[PKG_PATH_MAX],
  * a certain userid. Returns 0 on success, and -1 on failure.
  */
 int create_pkg_path(char path[PKG_PATH_MAX],
+                    PackageType package_type,
                     const char *pkgname,
                     const char *postfix,
                     userid_t userid)
@@ -63,10 +64,21 @@ int create_pkg_path(char path[PKG_PATH_MAX],
     size_t userid_len;
     char* userid_prefix;
     if (userid == 0) {
-        userid_prefix = PRIMARY_USER_PREFIX;
+    	if (package_type == PACKAGE_TYPE_NULL) {
+    		userid_prefix = PRIMARY_DATA_PREFIX;
+    	}
+    	else if (package_type == PRIVATE) {
+    		userid_prefix = PRIMARY_PRIVATE_USER_PREFIX;
+    	} else {//business or business_private app
+    		userid_prefix = PRIMARY_BUSINESS_USER_PREFIX;
+    	}
         userid_len = 0;
     } else {
-        userid_prefix = SECONDARY_USER_PREFIX;
+    	if (package_type == PRIVATE) {
+        	userid_prefix = SECONDARY_PRIVATE_USER_PREFIX;
+    	} else if(package_type == BUSINESS || package_type == BUSINESS_PRIVATE){//business or business_private app
+    		userid_prefix = SECONDARY_BUSINESS_USER_PREFIX;
+    	}
         userid_len = snprintf(NULL, 0, "%d", userid);
     }
 
@@ -103,15 +115,32 @@ int create_pkg_path(char path[PKG_PATH_MAX],
  * Returns 0 on success, and -1 on failure.
  */
 int create_user_path(char path[PKG_PATH_MAX],
+                    PackageType package_type,
                     userid_t userid)
 {
     size_t userid_len;
     char* userid_prefix;
     if (userid == 0) {
-        userid_prefix = PRIMARY_USER_PREFIX;
+		if (package_type == PRIVATE) {
+			userid_prefix = PRIMARY_PRIVATE_USER_PREFIX;
+		//} else {//business or business_private app
+		} else if(package_type == BUSINESS || package_type == BUSINESS_PRIVATE){//business or business_private app
+			userid_prefix = PRIMARY_BUSINESS_USER_PREFIX;
+		} else {
+	        ALOGE("Error building prefix for user path, package type was not set correctly");
+	        return -1;
+		}
         userid_len = 0;
     } else {
-        userid_prefix = SECONDARY_USER_PREFIX;
+		if (package_type == PRIVATE) {
+			userid_prefix = SECONDARY_PRIVATE_USER_PREFIX;
+		//} else {//business or business_private app
+		} else if(package_type == BUSINESS || package_type == BUSINESS_PRIVATE){//business or business_private app
+			userid_prefix = SECONDARY_BUSINESS_USER_PREFIX;
+		} else {
+	        ALOGE("Error building prefix for user path, package type was not set correctly");
+	        return -1;
+		}
         userid_len = snprintf(NULL, 0, "%d/", userid);
     }
 
@@ -162,15 +191,23 @@ int create_user_config_path(char path[PATH_MAX], userid_t userid) {
 
 int create_move_path(char path[PKG_PATH_MAX],
     const char* pkgname,
+    PackageType package_type,
     const char* leaf,
     userid_t userid)
 {
-    if ((android_data_dir.len + strlen(PRIMARY_USER_PREFIX) + strlen(pkgname) + strlen(leaf) + 1)
+	char* userid_prefix;
+	if (package_type == PRIVATE) {
+		userid_prefix = PRIMARY_PRIVATE_USER_PREFIX;
+	//} else {//business or business_private app
+    	} else if(package_type == BUSINESS || package_type == BUSINESS_PRIVATE){//business or business_private app
+		userid_prefix = PRIMARY_BUSINESS_USER_PREFIX;
+	}
+    if ((android_data_dir.len + strlen(userid_prefix) + strlen(pkgname) + strlen(leaf) + 1)
             >= PKG_PATH_MAX) {
         return -1;
     }
 
-    sprintf(path, "%s%s%s/%s", android_data_dir.path, PRIMARY_USER_PREFIX, pkgname, leaf);
+    sprintf(path, "%s%s%s/%s", android_data_dir.path, userid_prefix, pkgname, leaf);
     return 0;
 }
 

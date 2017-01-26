@@ -152,6 +152,12 @@ public class ResourcesManager {
     public Resources getTopLevelResources(String resDir, String[] splitResDirs,
             String[] overlayDirs, String[] libDirs, int displayId,
             Configuration overrideConfiguration, CompatibilityInfo compatInfo, IBinder token) {
+    		return getTopLevelResources(resDir, splitResDirs,overlayDirs, libDirs, displayId, 
+    				overrideConfiguration, compatInfo, token, null);
+    }
+    public Resources getTopLevelResources(String resDir, String[] splitResDirs,
+            String[] overlayDirs, String[] libDirs, int displayId,
+            Configuration overrideConfiguration, CompatibilityInfo compatInfo, IBinder token, String packageName) {
         final float scale = compatInfo.applicationScale;
         ResourcesKey key = new ResourcesKey(resDir, displayId, overrideConfiguration, scale, token);
         Resources r;
@@ -178,6 +184,8 @@ public class ResourcesManager {
         //}
 
         AssetManager assets = new AssetManager();
+        
+        assets.setPackageName(packageName);
         // resDir can be null if the 'android' package is creating a new Resources object.
         // This is fine, since each AssetManager automatically loads the 'android' package
         // already.

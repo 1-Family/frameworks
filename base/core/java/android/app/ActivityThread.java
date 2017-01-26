@@ -1622,8 +1622,13 @@ public final class ActivityThread {
     Resources getTopLevelResources(String resDir, String[] splitResDirs, String[] overlayDirs,
             String[] libDirs, int displayId, Configuration overrideConfiguration,
             LoadedApk pkgInfo) {
+    	return getTopLevelResources(resDir, splitResDirs, overlayDirs, libDirs, displayId, overrideConfiguration, pkgInfo, null);
+    }
+    Resources getTopLevelResources(String resDir, String[] splitResDirs, String[] overlayDirs,
+            String[] libDirs, int displayId, Configuration overrideConfiguration,
+            LoadedApk pkgInfo, String packageName) {
         return mResourcesManager.getTopLevelResources(resDir, splitResDirs, overlayDirs, libDirs,
-                displayId, overrideConfiguration, pkgInfo.getCompatibilityInfo(), null);
+                displayId, overrideConfiguration, pkgInfo.getCompatibilityInfo(), null, packageName);
     }
 
     final Handler getHandler() {

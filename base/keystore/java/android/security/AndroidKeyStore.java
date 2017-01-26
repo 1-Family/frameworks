@@ -30,17 +30,20 @@ import java.security.Key;
 import java.security.KeyStore.Entry;
 import java.security.KeyStore.PrivateKeyEntry;
 import java.security.KeyStore.ProtectionParameter;
+import java.security.KeyFactory;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.KeyStoreSpi;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -73,7 +76,37 @@ public class AndroidKeyStore extends KeyStoreSpi {
     public static final String NAME = "AndroidKeyStore";
 
     private android.security.KeyStore mKeyStore;
-
+    
+    public void Unlock() {
+    	mKeyStore.password(null);
+    	//mKeyStore.unlock(null);//using default password
+    }
+	//Creates a private key, throws error if already exists
+    public void CreatePrivateKey(String alias) throws UnrecoverableKeyException{
+    	String specialKeyAlias = String.format("%s%s", Credentials.USER_PRIVATE_KEY, alias);
+    	if (!mKeyStore.contains(specialKeyAlias) && !mKeyStore.generate(specialKeyAlias, 
+    			android.security.KeyStore.UID_SELF, 
+    			mKeyStore.getKeyTypeForAlgorithm("RSA"), -1, mKeyStore.FLAG_ENCRYPTED, null)) {
+    		throw new UnrecoverableKeyException("Error creating special key");
+    	}
+    }
+    
+    //Allow to get the public key without creating its certificate file (like when creating the private key directly by calling generate
+    public PublicKey engineGetPublicKey(String alias) throws UnrecoverableKeyException {
+		if (!isKeyEntry(alias)) {
+		    return null;
+		}
+		try {
+			final byte[] pubKeyBytes = mKeyStore.getPubkey(String.format("%s%s", Credentials.USER_PRIVATE_KEY, alias));
+			KeyFactory keyFact = KeyFactory.getInstance("RSA");
+	        return keyFact.generatePublic(new X509EncodedKeySpec(pubKeyBytes));
+		} catch (Exception e) {
+		    UnrecoverableKeyException t = new UnrecoverableKeyException("Can't get key");
+		    t.initCause(e);
+		    throw t;
+		}
+	}
+    
     @Override
     public Key engineGetKey(String alias, char[] password) throws NoSuchAlgorithmException,
             UnrecoverableKeyException {

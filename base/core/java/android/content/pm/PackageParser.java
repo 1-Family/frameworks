@@ -104,7 +104,7 @@ public class PackageParser {
     private static final boolean DEBUG_JAR = false;
     private static final boolean DEBUG_PARSER = false;
     private static final boolean DEBUG_BACKUP = false;
-
+    private static final boolean DEBUG_PACKAGE_TYPE = false;
     // TODO: switch outError users to PackageParserException
     // TODO: refactor "codePath" to "apkPath"
 
@@ -416,6 +416,9 @@ public class PackageParser {
         pi.applicationInfo = generateApplicationInfo(p, flags, state, userId);
         pi.installLocation = p.installLocation;
         pi.coreApp = p.coreApp;
+		if (DEBUG_PACKAGE_TYPE && pi.applicationInfo != null) {
+        	Log.d(TAG, String.format("The package type is <%d>", pi.applicationInfo.packageSecurityType.ordinal()));
+        }
         if ((pi.applicationInfo.flags&ApplicationInfo.FLAG_SYSTEM) != 0
                 || (pi.applicationInfo.flags&ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0) {
             pi.requiredForAllUsers = p.mRequiredForAllUsers;
@@ -573,6 +576,9 @@ public class PackageParser {
                 pi.signatures = new Signature[N];
                 System.arraycopy(p.mSignatures, 0, pi.signatures, 0, N);
             }
+        }
+        if (DEBUG_PACKAGE_TYPE && pi.applicationInfo != null) {
+        	Log.d(TAG, String.format("The package type is <%d>", pi.applicationInfo.packageSecurityType.ordinal()));
         }
         return pi;
     }
@@ -4637,6 +4643,10 @@ public class PackageParser {
             ai.enabled = false;
         }
         ai.enabledSetting = state.enabled;
+	
+		if (DEBUG_PACKAGE_TYPE) {
+        	Log.d(TAG, String.format("The package type is <%d>", ai.packageSecurityType.ordinal()));
+        }
     }
 
     public static ApplicationInfo generateApplicationInfo(Package p, int flags,
@@ -4645,6 +4655,11 @@ public class PackageParser {
         if (!checkUseInstalledOrHidden(flags, state)) {
             return null;
         }
+	
+        if (DEBUG_PACKAGE_TYPE && p.applicationInfo != null) {
+        	Log.d(TAG, String.format("The package type is <%d>", p.applicationInfo.packageSecurityType.ordinal()));
+        }
+	
         if (!copyNeeded(flags, p, state, null, userId)
                 && ((flags&PackageManager.GET_DISABLED_UNTIL_USED_COMPONENTS) == 0
                         || state.enabled != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED)) {

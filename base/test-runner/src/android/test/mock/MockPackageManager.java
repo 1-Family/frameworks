@@ -245,11 +245,14 @@ public class MockPackageManager extends PackageManager {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * @hide
+     */
     @Override
     public List<ResolveInfo> queryIntentActivities(Intent intent, int flags) {
         throw new UnsupportedOperationException();
     }
-
+    
     /** @hide */
     @Override
     public List<ResolveInfo> queryIntentActivitiesAsUser(Intent intent,

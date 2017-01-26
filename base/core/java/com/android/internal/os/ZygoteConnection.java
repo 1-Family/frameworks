@@ -348,6 +348,10 @@ class ZygoteConnection {
         int gid = 0;
         boolean gidSpecified;
 
+        /** from --setpackagetype */
+        int packageType = -1;
+        boolean packageTypeSpecified;
+        
         /** from --setgroups */
         int[] gids;
 
@@ -453,6 +457,14 @@ class ZygoteConnection {
                     gidSpecified = true;
                     gid = Integer.parseInt(
                             arg.substring(arg.indexOf('=') + 1));
+                } else if (arg.startsWith("--setpackagetype=")) {
+                    if (packageTypeSpecified) {
+                        throw new IllegalArgumentException(
+                                "Duplicate arg specified");
+                    }
+                    packageTypeSpecified = true;
+                    packageType = Integer.parseInt(
+                            arg.substring(arg.indexOf('=') + 1));                    
                 } else if (arg.startsWith("--target-sdk-version=")) {
                     if (targetSdkVersionSpecified) {
                         throw new IllegalArgumentException(
@@ -903,7 +915,7 @@ class ZygoteConnection {
                         parsedArgs.niceName, parsedArgs.targetSdkVersion,
                         pipeFd, parsedArgs.remainingArgs);
             } else {
-                RuntimeInit.zygoteInit(parsedArgs.targetSdkVersion,
+                RuntimeInit.zygoteInit(parsedArgs.targetSdkVersion, parsedArgs.niceName, parsedArgs.packageType,
                         parsedArgs.remainingArgs, null /* classLoader */);
             }
         } else {
